@@ -71,6 +71,7 @@ Partial Class Form1
         TxtYtKey.Name = "TxtYtKey"
         TxtYtKey.Size = New Size(222, 23)
         TxtYtKey.TabIndex = 11
+        TxtYtKey.UseSystemPasswordChar = True
         ' 
         ' Label1
         ' 
@@ -94,9 +95,10 @@ Partial Class Form1
         ' 
         ListBox1.FormattingEnabled = True
         ListBox1.ItemHeight = 15
-        ListBox1.Items.AddRange(New Object() {"HonDaeChun WEB 관리자 ", "버전 0.1 / 2023-07-16"})
+        ListBox1.Items.AddRange(New Object() {"HonDaeChun WEB 관리자 ", "버전 0.1.1 / 2023-07-17"})
         ListBox1.Location = New Point(12, 12)
         ListBox1.Name = "ListBox1"
+        ListBox1.SelectionMode = SelectionMode.None
         ListBox1.Size = New Size(228, 124)
         ListBox1.TabIndex = 8
         ' 
@@ -176,7 +178,7 @@ Partial Class Form1
         ' 
         ' TxtPort
         ' 
-        TxtPort.Location = New Point(163, 37)
+        TxtPort.Location = New Point(169, 37)
         TxtPort.Name = "TxtPort"
         TxtPort.Size = New Size(59, 23)
         TxtPort.TabIndex = 22
@@ -192,7 +194,7 @@ Partial Class Form1
         ' Label4
         ' 
         Label4.AutoSize = True
-        Label4.Location = New Point(161, 19)
+        Label4.Location = New Point(169, 19)
         Label4.Name = "Label4"
         Label4.Size = New Size(58, 15)
         Label4.TabIndex = 21
@@ -202,7 +204,7 @@ Partial Class Form1
         ' 
         TxtHost.Location = New Point(6, 37)
         TxtHost.Name = "TxtHost"
-        TxtHost.Size = New Size(151, 23)
+        TxtHost.Size = New Size(157, 23)
         TxtHost.TabIndex = 20
         ' 
         ' Label3
@@ -243,7 +245,7 @@ Partial Class Form1
         ' 
         ' Form1
         ' 
-        AutoScaleDimensions = New SizeF(7.0F, 15.0F)
+        AutoScaleDimensions = New SizeF(7F, 15F)
         AutoScaleMode = AutoScaleMode.Font
         ClientSize = New Size(485, 268)
         Controls.Add(BtnSaveConfig)
