@@ -15,4 +15,6 @@ startCommand = sudo docker run -d -p 80:80 -v /home/ubuntu/hondaechun:/app honda
 # 서비스 시작 명령어
 stopCommand = sudo docker stop $(sudo docker ps -aq)
 # 서비스 중지 명령어
+allowedExtensions = .zip,.rar,.7z,.mp3,.mp4,.m4a,.flac,.alac,.wav,.ogg,.opus
+# 카카오톡 대화 파일에서 추출할 파일 확장자 (쉼표로 구분, 공백 없음)
 ~~~
