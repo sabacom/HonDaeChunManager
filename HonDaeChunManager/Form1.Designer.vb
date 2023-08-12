@@ -33,6 +33,8 @@ Partial Class Form1
         Label2 = New Label()
         TxtKeyPath = New TextBox()
         GroupBox1 = New GroupBox()
+        ChkShutdown = New CheckBox()
+        ChkBaroUpload = New CheckBox()
         Label5 = New Label()
         TxtUsername = New TextBox()
         Label6 = New Label()
@@ -44,12 +46,14 @@ Partial Class Form1
         BtnUploadDB = New Button()
         BtnTestSSH = New Button()
         BtnSaveConfig = New Button()
+        BtnUpdateDB = New Button()
+        BtnRestart = New Button()
         GroupBox1.SuspendLayout()
         SuspendLayout()
         ' 
         ' BtnOpenFolder
         ' 
-        BtnOpenFolder.Location = New Point(246, 99)
+        BtnOpenFolder.Location = New Point(280, 145)
         BtnOpenFolder.Name = "BtnOpenFolder"
         BtnOpenFolder.Size = New Size(111, 37)
         BtnOpenFolder.TabIndex = 13
@@ -58,18 +62,18 @@ Partial Class Form1
         ' 
         ' BtnMakeDB
         ' 
-        BtnMakeDB.Location = New Point(246, 56)
+        BtnMakeDB.Location = New Point(280, 56)
         BtnMakeDB.Name = "BtnMakeDB"
-        BtnMakeDB.Size = New Size(111, 37)
+        BtnMakeDB.Size = New Size(111, 38)
         BtnMakeDB.TabIndex = 12
         BtnMakeDB.Text = "DB 생성하기"
         BtnMakeDB.UseVisualStyleBackColor = True
         ' 
         ' TxtYtKey
         ' 
-        TxtYtKey.Location = New Point(6, 81)
+        TxtYtKey.Location = New Point(6, 84)
         TxtYtKey.Name = "TxtYtKey"
-        TxtYtKey.Size = New Size(222, 23)
+        TxtYtKey.Size = New Size(256, 23)
         TxtYtKey.TabIndex = 11
         TxtYtKey.UseSystemPasswordChar = True
         ' 
@@ -84,9 +88,9 @@ Partial Class Form1
         ' 
         ' BtnLoadTXT
         ' 
-        BtnLoadTXT.Location = New Point(246, 12)
+        BtnLoadTXT.Location = New Point(280, 12)
         BtnLoadTXT.Name = "BtnLoadTXT"
-        BtnLoadTXT.Size = New Size(111, 37)
+        BtnLoadTXT.Size = New Size(111, 38)
         BtnLoadTXT.TabIndex = 9
         BtnLoadTXT.Text = "대화파일 로드"
         BtnLoadTXT.UseVisualStyleBackColor = True
@@ -95,18 +99,18 @@ Partial Class Form1
         ' 
         ListBox1.FormattingEnabled = True
         ListBox1.ItemHeight = 15
-        ListBox1.Items.AddRange(New Object() {"HonDaeChun WEB 관리자 ", "버전 0.1.1 / 2023-07-17"})
+        ListBox1.Items.AddRange(New Object() {"HonDaeChun WEB 관리자 ", "버전 0.1.2 / 2023-08-12"})
         ListBox1.Location = New Point(12, 12)
         ListBox1.Name = "ListBox1"
         ListBox1.SelectionMode = SelectionMode.None
-        ListBox1.Size = New Size(228, 124)
+        ListBox1.Size = New Size(262, 169)
         ListBox1.TabIndex = 8
         ' 
         ' BtnLoadKey
         ' 
         BtnLoadKey.Font = New Font("맑은 고딕", 6.75F, FontStyle.Regular, GraphicsUnit.Point)
         BtnLoadKey.ImageAlign = ContentAlignment.TopCenter
-        BtnLoadKey.Location = New Point(434, 37)
+        BtnLoadKey.Location = New Point(468, 37)
         BtnLoadKey.Name = "BtnLoadKey"
         BtnLoadKey.Size = New Size(22, 23)
         BtnLoadKey.TabIndex = 16
@@ -116,7 +120,7 @@ Partial Class Form1
         ' Label2
         ' 
         Label2.AutoSize = True
-        Label2.Location = New Point(234, 19)
+        Label2.Location = New Point(268, 19)
         Label2.Name = "Label2"
         Label2.Size = New Size(74, 15)
         Label2.TabIndex = 17
@@ -124,13 +128,15 @@ Partial Class Form1
         ' 
         ' TxtKeyPath
         ' 
-        TxtKeyPath.Location = New Point(234, 37)
+        TxtKeyPath.Location = New Point(268, 36)
         TxtKeyPath.Name = "TxtKeyPath"
         TxtKeyPath.Size = New Size(194, 23)
         TxtKeyPath.TabIndex = 18
         ' 
         ' GroupBox1
         ' 
+        GroupBox1.Controls.Add(ChkShutdown)
+        GroupBox1.Controls.Add(ChkBaroUpload)
         GroupBox1.Controls.Add(Label5)
         GroupBox1.Controls.Add(TxtUsername)
         GroupBox1.Controls.Add(Label6)
@@ -144,17 +150,37 @@ Partial Class Form1
         GroupBox1.Controls.Add(TxtHost)
         GroupBox1.Controls.Add(BtnLoadKey)
         GroupBox1.Controls.Add(Label3)
-        GroupBox1.Location = New Point(12, 142)
+        GroupBox1.Location = New Point(12, 188)
         GroupBox1.Name = "GroupBox1"
-        GroupBox1.Size = New Size(462, 113)
+        GroupBox1.Size = New Size(496, 145)
         GroupBox1.TabIndex = 19
         GroupBox1.TabStop = False
         GroupBox1.Text = "설정"
         ' 
+        ' ChkShutdown
+        ' 
+        ChkShutdown.AutoSize = True
+        ChkShutdown.Location = New Point(268, 120)
+        ChkShutdown.Name = "ChkShutdown"
+        ChkShutdown.Size = New Size(190, 19)
+        ChkShutdown.TabIndex = 30
+        ChkShutdown.Text = "DB 업로드 후 컴퓨터 종료하기"
+        ChkShutdown.UseVisualStyleBackColor = True
+        ' 
+        ' ChkBaroUpload
+        ' 
+        ChkBaroUpload.AutoSize = True
+        ChkBaroUpload.Location = New Point(6, 120)
+        ChkBaroUpload.Name = "ChkBaroUpload"
+        ChkBaroUpload.Size = New Size(235, 19)
+        ChkBaroUpload.TabIndex = 29
+        ChkBaroUpload.Text = "DB 생성/업데이트 후 바로 업로드 하기"
+        ChkBaroUpload.UseVisualStyleBackColor = True
+        ' 
         ' Label5
         ' 
         Label5.AutoSize = True
-        Label5.Location = New Point(319, 63)
+        Label5.Location = New Point(354, 66)
         Label5.Name = "Label5"
         Label5.Size = New Size(108, 15)
         Label5.TabIndex = 28
@@ -162,7 +188,7 @@ Partial Class Form1
         ' 
         ' TxtUsername
         ' 
-        TxtUsername.Location = New Point(234, 81)
+        TxtUsername.Location = New Point(268, 84)
         TxtUsername.Name = "TxtUsername"
         TxtUsername.Size = New Size(79, 23)
         TxtUsername.TabIndex = 27
@@ -170,7 +196,7 @@ Partial Class Form1
         ' Label6
         ' 
         Label6.AutoSize = True
-        Label6.Location = New Point(234, 63)
+        Label6.Location = New Point(268, 66)
         Label6.Name = "Label6"
         Label6.Size = New Size(71, 15)
         Label6.TabIndex = 25
@@ -178,14 +204,14 @@ Partial Class Form1
         ' 
         ' TxtPort
         ' 
-        TxtPort.Location = New Point(169, 37)
+        TxtPort.Location = New Point(192, 36)
         TxtPort.Name = "TxtPort"
-        TxtPort.Size = New Size(59, 23)
+        TxtPort.Size = New Size(70, 23)
         TxtPort.TabIndex = 22
         ' 
         ' TxtPassphrase
         ' 
-        TxtPassphrase.Location = New Point(319, 81)
+        TxtPassphrase.Location = New Point(353, 84)
         TxtPassphrase.Name = "TxtPassphrase"
         TxtPassphrase.Size = New Size(137, 23)
         TxtPassphrase.TabIndex = 24
@@ -194,7 +220,7 @@ Partial Class Form1
         ' Label4
         ' 
         Label4.AutoSize = True
-        Label4.Location = New Point(169, 19)
+        Label4.Location = New Point(192, 19)
         Label4.Name = "Label4"
         Label4.Size = New Size(58, 15)
         Label4.TabIndex = 21
@@ -204,7 +230,7 @@ Partial Class Form1
         ' 
         TxtHost.Location = New Point(6, 37)
         TxtHost.Name = "TxtHost"
-        TxtHost.Size = New Size(157, 23)
+        TxtHost.Size = New Size(180, 23)
         TxtHost.TabIndex = 20
         ' 
         ' Label3
@@ -218,36 +244,56 @@ Partial Class Form1
         ' 
         ' BtnUploadDB
         ' 
-        BtnUploadDB.Location = New Point(363, 56)
+        BtnUploadDB.Location = New Point(397, 100)
         BtnUploadDB.Name = "BtnUploadDB"
-        BtnUploadDB.Size = New Size(111, 37)
+        BtnUploadDB.Size = New Size(111, 38)
         BtnUploadDB.TabIndex = 20
         BtnUploadDB.Text = "DB 업로드"
         BtnUploadDB.UseVisualStyleBackColor = True
         ' 
         ' BtnTestSSH
         ' 
-        BtnTestSSH.Location = New Point(363, 12)
+        BtnTestSSH.Location = New Point(397, 12)
         BtnTestSSH.Name = "BtnTestSSH"
-        BtnTestSSH.Size = New Size(111, 37)
+        BtnTestSSH.Size = New Size(111, 38)
         BtnTestSSH.TabIndex = 22
         BtnTestSSH.Text = "SSH 접속 테스트"
         BtnTestSSH.UseVisualStyleBackColor = True
         ' 
         ' BtnSaveConfig
         ' 
-        BtnSaveConfig.Location = New Point(363, 99)
+        BtnSaveConfig.Location = New Point(397, 144)
         BtnSaveConfig.Name = "BtnSaveConfig"
         BtnSaveConfig.Size = New Size(111, 37)
         BtnSaveConfig.TabIndex = 29
         BtnSaveConfig.Text = "설정 저장"
         BtnSaveConfig.UseVisualStyleBackColor = True
         ' 
+        ' BtnUpdateDB
+        ' 
+        BtnUpdateDB.Location = New Point(280, 100)
+        BtnUpdateDB.Name = "BtnUpdateDB"
+        BtnUpdateDB.Size = New Size(111, 38)
+        BtnUpdateDB.TabIndex = 30
+        BtnUpdateDB.Text = "DB 업데이트"
+        BtnUpdateDB.UseVisualStyleBackColor = True
+        ' 
+        ' BtnRestart
+        ' 
+        BtnRestart.Location = New Point(397, 56)
+        BtnRestart.Name = "BtnRestart"
+        BtnRestart.Size = New Size(111, 38)
+        BtnRestart.TabIndex = 31
+        BtnRestart.Text = "서비스 재시작"
+        BtnRestart.UseVisualStyleBackColor = True
+        ' 
         ' Form1
         ' 
         AutoScaleDimensions = New SizeF(7F, 15F)
         AutoScaleMode = AutoScaleMode.Font
-        ClientSize = New Size(485, 268)
+        ClientSize = New Size(517, 339)
+        Controls.Add(BtnRestart)
+        Controls.Add(BtnUpdateDB)
         Controls.Add(BtnSaveConfig)
         Controls.Add(BtnTestSSH)
         Controls.Add(BtnUploadDB)
@@ -286,4 +332,8 @@ Partial Class Form1
     Friend WithEvents BtnTestSSH As Button
     Friend WithEvents Label5 As Label
     Friend WithEvents BtnSaveConfig As Button
+    Friend WithEvents BtnUpdateDB As Button
+    Friend WithEvents BtnRestart As Button
+    Friend WithEvents ChkBaroUpload As CheckBox
+    Friend WithEvents ChkShutdown As CheckBox
 End Class

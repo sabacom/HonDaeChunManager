@@ -11,11 +11,12 @@ Imports HtmlAgilityPack
 Imports IniParser
 Imports IniParser.Model
 Imports Renci.SshNet
+
 Public Class Form1
 
     Private cts As CancellationTokenSource
-    Private TextLoadFinished As Boolean = False
-    Private HasTextChanged As Boolean = False
+    Private ConfigLoadFinished As Boolean = False
+    Private HasConfigChanged As Boolean = False
 
     Private Sub DelTempfiles()
 
@@ -42,6 +43,16 @@ Public Class Form1
         TxtYtKey.Text = data("Settings").GetKeyData("ytapikey").Value
         TxtUsername.Text = data("Settings").GetKeyData("username").Value
         TxtPassphrase.Text = data("Settings").GetKeyData("keyPassphrase").Value
+        If data("Settings").GetKeyData("BaroUpload").Value.ToLower() = "true" Then
+            ChkBaroUpload.Checked = True
+        Else
+            ChkBaroUpload.Checked = False
+        End If
+        If data("Settings").GetKeyData("ShutdownAfterUpload").Value.ToLower() = "true" Then
+            ChkShutdown.Checked = True
+        Else
+            ChkShutdown.Checked = False
+        End If
 
     End Sub
 
@@ -57,9 +68,19 @@ Public Class Form1
         defaultSection("ytapikey") = TxtYtKey.Text
         defaultSection("username") = TxtUsername.Text
         defaultSection("keyPassphrase") = TxtPassphrase.Text
-
+        If ChkBaroUpload.Checked = True Then
+            defaultSection("BaroUpload") = "true"
+        Else
+            defaultSection("BaroUpload") = "false"
+        End If
+        If ChkShutdown.Checked = True Then
+            defaultSection("ShutdownAfterUpload") = "true"
+        Else
+            defaultSection("ShutdownAfterUpload") = "false"
+        End If
         parser.WriteFile("config.ini", data)
         MessageBox.Show("설정이 저장되었습니다.", "알림", MessageBoxButtons.OK, MessageBoxIcon.Information)
+        HasConfigChanged = False
 
     End Sub
 
@@ -74,6 +95,8 @@ Public Class Form1
                 BtnSaveConfig.Enabled = True
                 BtnUploadDB.Enabled = True
                 BtnTestSSH.Enabled = True
+                BtnRestart.Enabled = True
+                BtnUpdateDB.Enabled = True
                 GroupBox1.Enabled = True
             Case "f"
                 BtnLoadTXT.Enabled = False
@@ -82,6 +105,8 @@ Public Class Form1
                 BtnSaveConfig.Enabled = False
                 BtnUploadDB.Enabled = False
                 BtnTestSSH.Enabled = False
+                BtnRestart.Enabled = False
+                BtnUpdateDB.Enabled = False
                 GroupBox1.Enabled = False
         End Select
 
@@ -95,7 +120,7 @@ Public Class Form1
         openFileDialog.Filter = "카카오톡 대화 내보내기 파일 (*.txt)|*.txt"
 
         If openFileDialog.ShowDialog() <> DialogResult.OK Then
-            Return New List(Of String)() ' 파일 선택 취소시 빈 리스트 반환
+            Return New List(Of String)()
         End If
 
         Dim filePaths As String() = openFileDialog.FileNames
@@ -114,7 +139,7 @@ Public Class Form1
 
         ' 정규식 패턴
         Dim filePattern As String = "파일:\s+(.+)"
-        Dim youtubePattern As String = "(https?:\/\/(www\.)?youtu\.?be(\.com)?\/watch\?v=([^&\n]+)|youtu\.be\/([^&\n]+))"
+        Dim youtubePattern As String = "(https?:\/\/(www\.|m\.)?youtu\.?be(\.com)?\/watch\?v=([^&\n]+)|https?:\/\/youtu\.be\/([^?\n]+))"
         Dim ShortsPattern As String = "(https?:\/\/(www\.)?youtube\.com\/shorts\/([^\?\/\n]+))"
         Dim applePattern As String = "(https:\/\/music\.apple\.com\/kr\/[^\s]+)"
         Dim datePattern As String = "--------------- (\d+년 \d+월 \d+일)"
@@ -385,8 +410,11 @@ Public Class Form1
                       ListBox1.Items.Add("")
                   End Sub)
 
-        Dim processedCount As Integer = 0
-
+        Dim processedCount As Integer = 1
+        Me.Invoke(Sub()
+                      ListBox1.Items(1) = $"({processedCount}/{originalLineCount})"
+                      ListBox1.TopIndex = ListBox1.Items.Count - 1
+                  End Sub)
         Try
             For Each line As String In lines
                 ct.ThrowIfCancellationRequested()
@@ -482,14 +510,6 @@ Public Class Form1
 
                     Dim titleNode As HtmlNode = doc.DocumentNode.SelectSingleNode("//title")
 
-                    processedCount += 1
-
-                    Me.Invoke(Sub()
-                                  ListBox1.Items(1) = $"({processedCount}/{originalLineCount})"
-                                  ListBox1.TopIndex = ListBox1.Items.Count - 1
-                              End Sub)
-
-
                     If titleNode IsNot Nothing Then
                         Dim title As String = titleNode.InnerText
 
@@ -500,7 +520,14 @@ Public Class Form1
 
                 End Try
 
-                Await Task.Delay(300)
+                Await Task.Delay(350)
+
+                processedCount += 1
+
+                Me.Invoke(Sub()
+                              ListBox1.Items(1) = $"({processedCount}/{originalLineCount})"
+                              ListBox1.TopIndex = ListBox1.Items.Count - 1
+                          End Sub)
             Next
 
         Catch ex As OperationCanceledException
@@ -518,7 +545,83 @@ Public Class Form1
 
     End Function
 
-    Private Function WriteDB() As String
+    Private Function PreprocessUpdate() As Tuple(Of String, Integer, Integer, Integer)
+
+        Dim openFileDialog As New OpenFileDialog
+        openFileDialog.InitialDirectory = Path.Combine(Application.StartupPath, "DB")
+        openFileDialog.Title = "DB 파일을 선택해주세요."
+        openFileDialog.Filter = "DB 파일 (*.db)|*.db"
+
+        If openFileDialog.ShowDialog() = DialogResult.OK Then
+            Dim dbPath As String = openFileDialog.FileName
+            Using dbConn As New SQLiteConnection($"Data Source={dbPath};Version=3;")
+                dbConn.Open()
+
+                Dim appleDB As New List(Of String)
+                Using dbCmd As New SQLiteCommand("SELECT 애플뮤직URL FROM music_data WHERE 유형 = '애플뮤직'", dbConn)
+                    Using reader As SQLiteDataReader = dbCmd.ExecuteReader()
+                        While reader.Read()
+                            appleDB.Add(reader("애플뮤직URL").ToString())
+                        End While
+                    End Using
+                End Using
+
+                Dim txtAppleLines As List(Of String) = File.ReadAllLines(Application.StartupPath & "\DB\temp\apple.txt").ToList()
+                For Each appleMusicUrl In appleDB
+                    For i As Integer = 0 To txtAppleLines.Count - 2 Step 2
+                        If txtAppleLines(i + 1) = appleMusicUrl Then
+                            txtAppleLines.RemoveAt(i + 1)
+                            txtAppleLines.RemoveAt(i)
+                            Exit For
+                        End If
+                    Next
+                Next
+                File.WriteAllLines(Application.StartupPath & "\DB\temp\apple.txt", txtAppleLines)
+
+                Dim filesDB As New List(Of String)
+                Using dbCmd As New SQLiteCommand("SELECT 제목 FROM music_data WHERE 유형='파일'", dbConn)
+                    Using reader As SQLiteDataReader = dbCmd.ExecuteReader()
+                        While reader.Read()
+                            filesDB.Add(reader("제목").ToString())
+                        End While
+                    End Using
+                End Using
+
+                Dim txtFileLines As List(Of String) = File.ReadAllLines(Application.StartupPath & "\DB\temp\files.txt").ToList()
+                For Each title In filesDB
+                    txtFileLines.RemoveAll(Function(line) line.Contains($"/{title}/"))
+                Next
+                File.WriteAllLines(Application.StartupPath & "\DB\temp\files.txt", txtFileLines)
+
+                Dim ytDB As New List(Of String)
+                Using dbCmd As New SQLiteCommand("SELECT 유튜브id FROM music_data", dbConn)
+                    Using reader As SQLiteDataReader = dbCmd.ExecuteReader()
+                        While reader.Read()
+                            ytDB.Add(reader("유튜브id").ToString())
+                        End While
+                    End Using
+                End Using
+
+                Dim txtYTLines As List(Of String) = File.ReadAllLines(Application.StartupPath & "\DB\temp\yt.txt").ToList()
+                For Each youtubeId In ytDB
+                    txtYTLines.RemoveAll(Function(line) line.Contains($"/{youtubeId}/"))
+                Next
+                File.WriteAllLines(Application.StartupPath & "\DB\temp\yt.txt", txtYTLines)
+
+                dbConn.Close()
+
+                Return New Tuple(Of String, Integer, Integer, Integer)(dbPath, txtFileLines.Count, txtYTLines.Count, txtAppleLines.Count / 2)
+
+            End Using
+
+        ElseIf openFileDialog.ShowDialog() = DialogResult.No Then
+            MessageBox.Show("취소되었습니다.", "알림", MessageBoxButtons.OK, MessageBoxIcon.Information)
+            Return New Tuple(Of String, Integer, Integer, Integer)(String.Empty, -1, -1, -1)
+        End If
+
+    End Function
+
+    Private Function WriteDB(ByVal mode As String, Optional ByVal exDbFilepath As String = "") As String
 
         Dim baseDir As String = AppDomain.CurrentDomain.BaseDirectory
         Dim fileNames As String() = {"apple.txt", "files.txt", "yt.txt"}
@@ -541,6 +644,11 @@ Public Class Form1
 
         Dim dbFileName As String = "DB_" & DateTime.Now.ToString("yyyyMMdd_HHmm") & ".db"
         Dim dbFilePath As String = Application.StartupPath & "\DB\" & dbFileName
+
+        If mode.ToUpper() = "UPDATE" Then
+            File.Copy(exDbFilepath, dbFilePath)
+        End If
+
         Using conn As New SQLiteConnection($"Data Source={dbFilePath}")
 
             conn.Open()
@@ -553,11 +661,18 @@ Public Class Form1
                 cmd.CommandText = "CREATE TABLE IF NOT EXISTS db_info (id INTEGER PRIMARY KEY, created_at DATETIME)"
                 cmd.ExecuteNonQuery()
 
-                cmd.CommandText = "INSERT INTO db_info (id, created_at) VALUES (?, ?)"
-                cmd.Parameters.AddWithValue("id", 1)
-                cmd.Parameters.AddWithValue("created_at", DateTime.Now.ToString("yyyy-MM-dd HH:mm"))
-                cmd.ExecuteNonQuery()
-                cmd.Parameters.Clear()
+                If mode.ToUpper() = "CREATE" Then
+                    cmd.CommandText = "INSERT INTO db_info (id, created_at) VALUES (?, ?)"
+                    cmd.Parameters.AddWithValue("id", 1)
+                    cmd.Parameters.AddWithValue("created_at", DateTime.Now.ToString("yyyy-MM-dd HH:mm"))
+                    cmd.ExecuteNonQuery()
+                    cmd.Parameters.Clear()
+                ElseIf mode.ToUpper() = "UPDATE" Then
+                    cmd.CommandText = "UPDATE db_info SET created_at = ? WHERE id = 1"
+                    cmd.Parameters.AddWithValue("created_at", DateTime.Now.ToString("yyyy-MM-dd HH:mm"))
+                    cmd.ExecuteNonQuery()
+                    cmd.Parameters.Clear()
+                End If
 
                 Me.Invoke(Sub()
                               ListBox1.Items.Clear()
@@ -677,116 +792,99 @@ Public Class Form1
 
     End Function
 
-    Private Sub UploadDB()
+    Private Sub UploadDB(dbFilePath As String)
 
-        Dim openFileDialog As New OpenFileDialog
-        openFileDialog.InitialDirectory = Path.Combine(Application.StartupPath, "DB")
-        openFileDialog.Title = "DB 파일을 선택해주세요."
-        openFileDialog.Filter = "DB 파일 (*.db)|*.db"
+        Me.Invoke(Sub()
+                      ChangeEnables("f")
+                  End Sub)
 
-        If openFileDialog.ShowDialog() = DialogResult.OK Then
-            Dim dbFilePath As String = openFileDialog.FileName
+        Dim parser As New FileIniDataParser()
+        Dim data As IniData = parser.ReadFile("config.ini")
 
-            Dim result As DialogResult = MessageBox.Show("DB 파일을 업로드 하시겠습니까?", "확인", MessageBoxButtons.YesNo, MessageBoxIcon.Question)
+        Dim keyfilePath As String = TxtKeyPath.Text
+        Dim username As String = TxtUsername.Text
+        Dim host As String = TxtHost.Text
+        Dim port As Integer = TxtPort.Text
+        Dim appPath As String = data("Settings").GetKeyData("appPath").Value
+        Dim startCommand As String = data("Settings").GetKeyData("startCommand").Value
+        Dim stopCommand As String = data("Settings").GetKeyData("stopCommand").Value
 
-            If result = DialogResult.Yes Then
+        Dim keyFile As PrivateKeyFile
 
-                Task.Run(Sub()
-                             Me.Invoke(Sub()
-                                           ChangeEnables("f")
-                                       End Sub)
-                             Dim parser As New FileIniDataParser()
-                             Dim data As IniData = parser.ReadFile("config.ini")
-
-                             Dim keyfilePath As String = TxtKeyPath.Text
-                             Dim username As String = TxtUsername.Text
-                             Dim host As String = TxtHost.Text
-                             Dim port As Integer = TxtPort.Text
-                             Dim appPath As String = data("Settings").GetKeyData("appPath").Value
-                             Dim startCommand As String = data("Settings").GetKeyData("startCommand").Value
-                             Dim stopCommand As String = data("Settings").GetKeyData("stopCommand").Value
-
-                             Dim keyFile As PrivateKeyFile
-
-                             Try
-                                 If String.IsNullOrWhiteSpace(TxtPassphrase.Text) Then
-                                     keyFile = New PrivateKeyFile(keyfilePath)
-                                 Else
-                                     Dim passphrase As String = TxtPassphrase.Text
-                                     keyFile = New PrivateKeyFile(keyfilePath, passphrase)
-                                 End If
-                             Catch ex As InvalidOperationException
-                                 Me.Invoke(Sub()
-                                               MessageBox.Show("SSH 키의 Passphrase가 올바르지 않습니다." & vbCrLf & "다시 시도해주세요.", "오류", MessageBoxButtons.OK, MessageBoxIcon.Error)
-                                               ListBox1.Items.Clear()
-                                               ListBox1.Items.Add("서버 접속 실패")
-                                               ChangeEnables("t")
-                                               BtnMakeDB.Enabled = False
-                                           End Sub)
-                                 Return
-                             End Try
-
-                             Dim keyFiles As New List(Of PrivateKeyFile) From {keyFile}
-                             Dim connInfo As New ConnectionInfo(host, port, username, New PrivateKeyAuthenticationMethod(username, keyFiles.ToArray()))
-
-                             Try
-                                 Me.Invoke(Sub()
-                                               ListBox1.Items.Clear()
-                                               ListBox1.Items.Add("서버에 접속하는 중...")
-                                           End Sub)
-                                 Using sshClient As New SshClient(connInfo)
-                                     sshClient.Connect()
-
-                                     Me.Invoke(Sub()
-                                                   ListBox1.Items.Clear()
-                                                   ListBox1.Items.Add("서버 접속 성공")
-                                                   ListBox1.Items.Add("")
-                                                   ListBox1.Items.Add("서비스를 중단하는 중...")
-                                               End Sub)
-
-                                     sshClient.RunCommand(stopCommand)
-
-                                     Me.Invoke(Sub()
-                                                   ListBox1.Items.Add("DB 파일을 업로드 하는 중...")
-                                               End Sub)
-
-                                     sshClient.RunCommand($"rm {appPath}/DB.db")
-
-                                     Using scpClient As New ScpClient(connInfo)
-                                         scpClient.Connect()
-                                         Dim dbFile As New FileInfo(dbFilePath)
-                                         scpClient.Upload(dbFile, $"{appPath}/DB.db")
-                                     End Using
-
-                                     sshClient.RunCommand(startCommand)
-                                     sshClient.Disconnect()
-
-                                     Me.Invoke(Sub()
-                                                   ListBox1.Items.Add("")
-                                                   ListBox1.Items.Add("DB 파일 업로드 / 서비스 재시작 완료")
-                                                   ChangeEnables("t")
-                                                   BtnMakeDB.Enabled = False
-                                               End Sub)
-
-                                 End Using
-                             Catch ex As Exception
-                                 Me.Invoke(Sub()
-                                               ListBox1.Items.Clear()
-                                               ListBox1.Items.Add("서버 접속 실패")
-                                               ChangeEnables("t")
-                                               BtnMakeDB.Enabled = False
-                                           End Sub)
-                                 Return
-                             End Try
-                         End Sub)
-
-            ElseIf result = DialogResult.No Then
-                MessageBox.Show("취소되었습니다.", "알림", MessageBoxButtons.OK, MessageBoxIcon.Information)
+        Try
+            If String.IsNullOrWhiteSpace(TxtPassphrase.Text) Then
+                keyFile = New PrivateKeyFile(keyfilePath)
+            Else
+                Dim passphrase As String = TxtPassphrase.Text
+                keyFile = New PrivateKeyFile(keyfilePath, passphrase)
             End If
+        Catch ex As InvalidOperationException
+            Me.Invoke(Sub()
+                          MessageBox.Show("SSH 키의 Passphrase가 올바르지 않습니다." & vbCrLf & "다시 시도해주세요.", "오류", MessageBoxButtons.OK, MessageBoxIcon.Error)
+                          ListBox1.Items.Clear()
+                          ListBox1.Items.Add("서버 접속 실패")
+                          ChangeEnables("t")
+                          BtnMakeDB.Enabled = False
+                      End Sub)
+            Return
+        End Try
 
-        Else
-            MessageBox.Show("파일을 선택해주세요.", "경고", MessageBoxButtons.OK, MessageBoxIcon.Warning)
-        End If
+        Dim keyFiles As New List(Of PrivateKeyFile) From {keyFile}
+        Dim connInfo As New ConnectionInfo(host, port, username, New PrivateKeyAuthenticationMethod(username, keyFiles.ToArray()))
+
+        Try
+            Me.Invoke(Sub()
+                          ListBox1.Items.Clear()
+                          ListBox1.Items.Add("서버에 접속하는 중...")
+                      End Sub)
+            Using sshClient As New SshClient(connInfo)
+                sshClient.Connect()
+
+                Me.Invoke(Sub()
+                              ListBox1.Items.Clear()
+                              ListBox1.Items.Add("서버 접속 성공")
+                              ListBox1.Items.Add("")
+                              ListBox1.Items.Add("서비스를 중단하는 중...")
+                          End Sub)
+
+                sshClient.RunCommand(stopCommand)
+
+                Me.Invoke(Sub()
+                              ListBox1.Items.Add("DB 파일을 업로드 하는 중...")
+                          End Sub)
+
+                sshClient.RunCommand($"rm {appPath}/DB.db")
+
+                Using scpClient As New ScpClient(connInfo)
+                    scpClient.Connect()
+                    Dim dbFile As New FileInfo(dbFilePath)
+                    scpClient.Upload(dbFile, $"{appPath}/DB.db")
+                End Using
+
+                sshClient.RunCommand(startCommand)
+                sshClient.Disconnect()
+
+                Me.Invoke(Sub()
+                              ListBox1.Items.Add("")
+                              ListBox1.Items.Add("DB 파일 업로드 / 서비스 재시작 완료")
+                              ListBox1.Items.Add("업로드 된 DB 파일 : " & Path.GetFileName(dbFilePath))
+                              ChangeEnables("t")
+                              BtnMakeDB.Enabled = False
+                          End Sub)
+
+                If ChkShutdown.Checked = True Then System.Diagnostics.Process.Start("shutdown", "/s /t 0")
+
+            End Using
+
+        Catch ex As Exception
+            Me.Invoke(Sub()
+                          ListBox1.Items.Clear()
+                          ListBox1.Items.Add("서버 접속 실패")
+                          ChangeEnables("t")
+                          BtnMakeDB.Enabled = False
+                      End Sub)
+            Return
+        End Try
 
     End Sub
 
@@ -873,17 +971,101 @@ Public Class Form1
 
     End Sub
 
+    Private Sub RestartService()
+
+        Dim result As DialogResult = MessageBox.Show("서비스를 재시작 하시겠습니까?", "확인", MessageBoxButtons.YesNo, MessageBoxIcon.Question)
+        If result = DialogResult.Yes Then
+            Me.Invoke(Sub()
+                          ChangeEnables("f")
+                          ListBox1.Items.Clear()
+                          ListBox1.Items.Add("서버에 접속하는 중...")
+                      End Sub)
+
+            Dim parser As New FileIniDataParser()
+            Dim data As IniData = parser.ReadFile("config.ini")
+
+            Dim keyfilePath As String = TxtKeyPath.Text
+            Dim username As String = TxtUsername.Text
+            Dim host As String = TxtHost.Text
+            Dim port As Integer = TxtPort.Text
+            Dim startCommand As String = data("Settings").GetKeyData("startCommand").Value
+            Dim stopCommand As String = data("Settings").GetKeyData("stopCommand").Value
+
+            Dim keyFile As PrivateKeyFile
+
+            Try
+                If String.IsNullOrWhiteSpace(TxtPassphrase.Text) Then
+                    keyFile = New PrivateKeyFile(keyfilePath)
+                Else
+                    Dim passphrase As String = TxtPassphrase.Text
+                    keyFile = New PrivateKeyFile(keyfilePath, passphrase)
+                End If
+
+                Dim keyFiles As New List(Of PrivateKeyFile) From {keyFile}
+                Dim connInfo As New ConnectionInfo(host, port, username, New PrivateKeyAuthenticationMethod(username, keyFiles.ToArray()))
+
+                Using sshClient As New SshClient(connInfo)
+                    sshClient.Connect()
+                    Me.Invoke(Sub()
+                                  ListBox1.Items.Clear()
+                                  ListBox1.Items.Add("서버 접속 성공")
+                                  ListBox1.Items.Add("")
+                                  ListBox1.Items.Add("서비스를 중단하는 중...")
+                              End Sub)
+
+                    Dim command As SshCommand = sshClient.RunCommand(stopCommand)
+
+                    Me.Invoke(Sub()
+                                  ListBox1.Items.Add("서비스를 시작하는 중...")
+                              End Sub)
+                    command = sshClient.RunCommand(startCommand)
+
+                    sshClient.Disconnect()
+
+                    Me.Invoke(Sub()
+                                  ListBox1.Items.Add("")
+                                  ListBox1.Items.Add("서비스 재시작이 완료되었습니다.")
+                              End Sub)
+
+                End Using
+
+            Catch ex As InvalidOperationException
+                Me.Invoke(Sub()
+                              MessageBox.Show("SSH 키의 Passphrase가 올바르지 않습니다." & vbCrLf & "다시 시도해주세요.", "오류", MessageBoxButtons.OK, MessageBoxIcon.Error)
+                              ListBox1.Items.Clear()
+                              ListBox1.Items.Add("서버 접속 실패")
+                          End Sub)
+
+                Return
+            Catch ex As Exception
+                Me.Invoke(Sub()
+                              ListBox1.Items.Clear()
+                              ListBox1.Items.Add("서버 접속 실패")
+                          End Sub)
+
+            Finally
+                Me.Invoke(Sub()
+                              ChangeEnables("t")
+                              BtnMakeDB.Enabled = False
+                          End Sub)
+
+            End Try
+        End If
+
+    End Sub
+
     Private Sub Form1_Load(sender As Object, e As EventArgs) Handles MyBase.Load
 
         LoadConfig()
         BtnMakeDB.Enabled = False
+        BtnUpdateDB.Enabled = False
 
         Dim dbFolderPath As String = Path.Combine(Application.StartupPath, "DB")
         If Not Directory.Exists(dbFolderPath) Then
             Directory.CreateDirectory(dbFolderPath)
         End If
 
-        TextLoadFinished = True
+        ConfigLoadFinished = True
 
     End Sub
 
@@ -896,7 +1078,7 @@ Public Class Form1
             End If
         End If
 
-        If HasTextChanged Then
+        If HasConfigChanged Then
             Dim result As DialogResult = MessageBox.Show("설정의 변경사항이 저장되지 않았습니다." & vbCrLf & "저장하시겠습니까?", "확인", MessageBoxButtons.YesNo, MessageBoxIcon.Question)
 
             If result = DialogResult.Yes Then
@@ -905,6 +1087,34 @@ Public Class Form1
         End If
 
         DelTempfiles()
+
+    End Sub
+
+    Private Sub BtnLoadTXT_Click(sender As Object, e As EventArgs) Handles BtnLoadTXT.Click
+
+        Dim lines As List(Of String) = PreprocessTextFiles()
+        If lines.Count > 0 Then
+            ListBox1.Items.Clear()
+            ListBox1.Items.Add("대화 파일 불러오기 성공")
+            Dim countTuple As Tuple(Of Integer, Integer) = RemoveAndSplit(lines)
+            Dim fileCount As Integer = countTuple.Item1
+            Dim youtubeCount As Integer = countTuple.Item2
+            Dim appleCount As Integer = RemoveApple()
+            ListBox1.Items.Add("")
+            ListBox1.Items.Add($"파일 : {fileCount}개")
+            ListBox1.Items.Add($"유튜브 : {youtubeCount}개")
+            ListBox1.Items.Add($"애플뮤직 : {appleCount}개")
+            ListBox1.Items.Add("")
+            ListBox1.Items.Add("(중복 제외)")
+            BtnMakeDB.Enabled = True
+            BtnUpdateDB.Enabled = True
+        Else
+            MessageBox.Show("파일을 선택하지 않았거나 잘못된 파일입니다." & vbCrLf & "다시 시도해주세요.", "알림", MessageBoxButtons.OK, MessageBoxIcon.Warning)
+            ListBox1.Items.Clear()
+            ListBox1.Items.Add("대화 파일 불러오기 실패")
+            BtnUpdateDB.Enabled = False
+            BtnMakeDB.Enabled = False
+        End If
 
     End Sub
 
@@ -925,26 +1135,36 @@ Public Class Form1
                     cts = New CancellationTokenSource()
                     Try
                         BtnMakeDB.Text = "중지하기"
-                        Dim difference As Integer = Await Task.Run(Function() ProcessYT(cts.Token), cts.Token)
-                        Dim diff As Integer = Await Task.Run(Function() ProcessApple(cts.Token), cts.Token)
+                        Dim YTDiff As Integer = Await Task.Run(Function() ProcessYT(cts.Token), cts.Token)
+                        Dim AppleDiff As Integer = Await Task.Run(Function() ProcessApple(cts.Token), cts.Token)
 
                         If Not cts.IsCancellationRequested Then
                             BtnMakeDB.Enabled = False
-                            Dim dbFileName As String = Await Task.Run(Function() WriteDB())
+                            Dim dbFileName As String = Await Task.Run(Function() WriteDB("CREATE"))
+                            If ChkBaroUpload.Checked = True Then
+                                Await Task.Run(Sub() UploadDB(Application.StartupPath & "\DB\" & dbFileName))
+                            End If
                             ListBox1.Items.Clear()
-                            ListBox1.Items.Add("DB 생성을 완료하였습니다.")
+                            If ChkBaroUpload.Checked = True Then
+                                ListBox1.Items.Add("DB 생성 및 업로드를 완료하였습니다.")
+                            Else
+                                ListBox1.Items.Add("DB 생성을 완료하였습니다.")
+                            End If
                             ListBox1.Items.Add("")
-                            ListBox1.Items.Add($"삭제 / 비공개 영상 : {difference}개")
-                            ListBox1.Items.Add($"삭제 / 지역제한 애플뮤직 : {diff}개")
+                            ListBox1.Items.Add($"삭제 / 비공개 영상 : {YTDiff}개")
+                            ListBox1.Items.Add($"삭제 / 지역제한 애플뮤직 : {AppleDiff}개")
                             ListBox1.Items.Add("")
-                            ListBox1.Items.Add($"생성된 파일명 : {dbFileName}")
+                            If ChkBaroUpload.Checked = True Then
+                                ListBox1.Items.Add($"업로드 된 DB 파일 : {dbFileName}")
+                            Else
+                                ListBox1.Items.Add($"생성된 파일명 : {dbFileName}")
+                            End If
                             ChangeEnables("t")
                             DelTempfiles()
                         End If
                     Catch ex As OperationCanceledException
 
                     End Try
-                    BtnMakeDB.Enabled = False
                     BtnMakeDB.Text = "DB 생성하기"
                 End If
             Else
@@ -954,6 +1174,73 @@ Public Class Form1
                     cts.Cancel()
                     ChangeEnables("t")
                     BtnMakeDB.Enabled = False
+                    BtnUpdateDB.Enabled = False
+                End If
+            End If
+        End If
+
+    End Sub
+
+    Private Async Sub BtnUpdateDB_Click(sender As Object, e As EventArgs) Handles BtnUpdateDB.Click
+
+        If String.IsNullOrWhiteSpace(TxtYtKey.Text) Then
+            MessageBox.Show("유튜브 API 키를 입력해주세요.", "알림", MessageBoxButtons.OK, MessageBoxIcon.Warning)
+        Else
+            If BtnUpdateDB.Text = "DB 업데이트" Then
+                Dim dbInfo As Tuple(Of String, Integer, Integer, Integer) = PreprocessUpdate()
+                Dim message As String = "최대 " & dbInfo.Item3 & "개의 유튜브 API 토큰이 사용될 수 있습니다." & vbCrLf & "계속하시겠습니까?"
+                Dim result As DialogResult = MessageBox.Show(message, "확인", MessageBoxButtons.YesNo, MessageBoxIcon.Question)
+
+                If result = DialogResult.Yes Then
+                    ChangeEnables("f")
+                    BtnUpdateDB.Enabled = True
+
+                    cts = New CancellationTokenSource()
+                    Try
+                        BtnUpdateDB.Text = "중지하기"
+                        Dim YTDiff As Integer = Await Task.Run(Function() ProcessYT(cts.Token), cts.Token)
+                        Dim AppleDiff As Integer = Await Task.Run(Function() ProcessApple(cts.Token), cts.Token)
+
+                        If Not cts.IsCancellationRequested Then
+                            BtnMakeDB.Enabled = False
+                            BtnUpdateDB.Enabled = False
+                            Dim dbFileName As String = Await Task.Run(Function() WriteDB("UPDATE", dbInfo.Item1))
+                            If ChkBaroUpload.Checked = True Then
+                                Await Task.Run(Sub() UploadDB(Application.StartupPath & "\DB\" & dbFileName))
+                            End If
+                            ListBox1.Items.Clear()
+                            If ChkBaroUpload.Checked = True Then
+                                ListBox1.Items.Add("DB 업데이트 및 업로드를 완료하였습니다.")
+                            Else
+                                ListBox1.Items.Add("DB 업데이트를 완료하였습니다.")
+                            End If
+                            ListBox1.Items.Add("")
+                            ListBox1.Items.Add($"업데이트 한 파일 : {dbInfo.Item2}개")
+                            ListBox1.Items.Add($"업데이트 한 유튜브 : {dbInfo.Item3 - YTDiff}개")
+                            ListBox1.Items.Add($"업데이트 한 애플뮤직 : {dbInfo.Item4 - AppleDiff}개")
+                            ListBox1.Items.Add("")
+                            If ChkBaroUpload.Checked = True Then
+                                ListBox1.Items.Add($"업로드 된 DB 파일 : {dbFileName}")
+                            Else
+                                ListBox1.Items.Add($"생성된 파일명 : {dbFileName}")
+                            End If
+
+                            ChangeEnables("t")
+                            DelTempfiles()
+                        End If
+                    Catch ex As OperationCanceledException
+
+                    End Try
+                    BtnUpdateDB.Text = "DB 업데이트"
+                End If
+            Else
+                Dim message As String = "DB 업데이트를 중단하시겠습니까?"
+                Dim result As DialogResult = MessageBox.Show(message, "확인", MessageBoxButtons.YesNo, MessageBoxIcon.Question)
+                If result = DialogResult.Yes And cts IsNot Nothing Then
+                    cts.Cancel()
+                    ChangeEnables("t")
+                    BtnMakeDB.Enabled = False
+                    BtnUpdateDB.Enabled = False
                 End If
             End If
         End If
@@ -993,34 +1280,31 @@ Public Class Form1
 
     End Sub
 
-    Private Sub BtnUploadDB_Click(sender As Object, e As EventArgs) Handles BtnUploadDB.Click
+    Private Async Sub BtnUploadDB_Click(sender As Object, e As EventArgs) Handles BtnUploadDB.Click
 
-        UploadDB()
+        Dim openFileDialog As New OpenFileDialog
+        openFileDialog.InitialDirectory = Path.Combine(Application.StartupPath, "DB")
+        openFileDialog.Title = "DB 파일을 선택해주세요."
+        openFileDialog.Filter = "DB 파일 (*.db)|*.db"
+
+        If openFileDialog.ShowDialog() = DialogResult.OK Then
+
+            Dim result As DialogResult = MessageBox.Show("DB 파일을 업로드 하시겠습니까?", "확인", MessageBoxButtons.YesNo, MessageBoxIcon.Question)
+            If result = DialogResult.Yes Then
+                Await Task.Run(Sub() UploadDB(openFileDialog.FileName))
+            ElseIf result = DialogResult.No Then
+                MessageBox.Show("취소되었습니다.", "알림", MessageBoxButtons.OK, MessageBoxIcon.Information)
+            End If
+
+        Else
+            MessageBox.Show("파일을 선택해주세요.", "경고", MessageBoxButtons.OK, MessageBoxIcon.Warning)
+        End If
 
     End Sub
 
-    Private Sub BtnLoadTXT_Click(sender As Object, e As EventArgs) Handles BtnLoadTXT.Click
+    Private Async Sub BtnRestart_Click(sender As Object, e As EventArgs) Handles BtnRestart.Click
 
-        Dim lines As List(Of String) = PreprocessTextFiles()
-        If lines.Count > 0 Then
-            ListBox1.Items.Clear()
-            ListBox1.Items.Add("대화 파일 불러오기 성공")
-            Dim countTuple As Tuple(Of Integer, Integer) = RemoveAndSplit(lines)
-            Dim fileCount As Integer = countTuple.Item1
-            Dim youtubeCount As Integer = countTuple.Item2
-            Dim appleCount As Integer = RemoveApple()
-            ListBox1.Items.Add("")
-            ListBox1.Items.Add($"파일 : {fileCount}개")
-            ListBox1.Items.Add($"유튜브 : {youtubeCount}개")
-            ListBox1.Items.Add($"애플뮤직 : {appleCount}개")
-            ListBox1.Items.Add("")
-            ListBox1.Items.Add("(중복 제외)")
-            BtnMakeDB.Enabled = True
-        Else
-            MessageBox.Show("파일을 선택하지 않았거나 잘못된 파일입니다." & vbCrLf & "다시 시도해주세요.", "알림", MessageBoxButtons.OK, MessageBoxIcon.Warning)
-            ListBox1.Items.Clear()
-            ListBox1.Items.Add("대화 파일 불러오기 실패")
-        End If
+        Await Task.Run(Sub() RestartService())
 
     End Sub
 
@@ -1034,26 +1318,35 @@ Public Class Form1
     End Sub
 
     Private Sub TxtHost_TextChanged(sender As Object, e As EventArgs) Handles TxtHost.TextChanged
-        If TextLoadFinished = True Then HasTextChanged = True
+        If ConfigLoadFinished = True Then HasConfigChanged = True
     End Sub
 
     Private Sub TxtPort_TextChanged(sender As Object, e As EventArgs) Handles TxtPort.TextChanged
-        If TextLoadFinished = True Then HasTextChanged = True
+        If ConfigLoadFinished = True Then HasConfigChanged = True
     End Sub
 
     Private Sub TxtKeyPath_TextChanged(sender As Object, e As EventArgs) Handles TxtKeyPath.TextChanged
-        If TextLoadFinished = True Then HasTextChanged = True
+        If ConfigLoadFinished = True Then HasConfigChanged = True
     End Sub
 
     Private Sub TxtYtKey_TextChanged(sender As Object, e As EventArgs) Handles TxtYtKey.TextChanged
-        If TextLoadFinished = True Then HasTextChanged = True
+        If ConfigLoadFinished = True Then HasConfigChanged = True
     End Sub
 
     Private Sub TxtUsername_TextChanged(sender As Object, e As EventArgs) Handles TxtUsername.TextChanged
-        If TextLoadFinished = True Then HasTextChanged = True
+        If ConfigLoadFinished = True Then HasConfigChanged = True
     End Sub
 
     Private Sub TxtPassphrase_TextChanged(sender As Object, e As EventArgs) Handles TxtPassphrase.TextChanged
-        If TextLoadFinished = True Then HasTextChanged = True
+        If ConfigLoadFinished = True Then HasConfigChanged = True
     End Sub
+
+    Private Sub ChkBaroUpload_CheckedChanged(sender As Object, e As EventArgs) Handles ChkBaroUpload.CheckedChanged
+        If ConfigLoadFinished = True Then HasConfigChanged = True
+    End Sub
+
+    Private Sub ChkShutdown_CheckedChanged(sender As Object, e As EventArgs) Handles ChkShutdown.CheckedChanged
+        If ConfigLoadFinished = True Then HasConfigChanged = True
+    End Sub
+
 End Class
