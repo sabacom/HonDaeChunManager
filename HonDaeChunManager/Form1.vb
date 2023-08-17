@@ -21,9 +21,7 @@ Public Class Form1
     Private Sub DelTempfiles()
 
         Dim tempFolderPath As String = Path.Combine(Application.StartupPath, "DB\temp")
-        If Directory.Exists(tempFolderPath) Then
-            Directory.Delete(tempFolderPath, True)
-        End If
+        If Directory.Exists(tempFolderPath) Then Directory.Delete(tempFolderPath, True)
 
     End Sub
 
@@ -43,16 +41,8 @@ Public Class Form1
         TxtYtKey.Text = data("Settings").GetKeyData("ytapikey").Value
         TxtUsername.Text = data("Settings").GetKeyData("username").Value
         TxtPassphrase.Text = data("Settings").GetKeyData("keyPassphrase").Value
-        If data("Settings").GetKeyData("BaroUpload").Value.ToLower() = "true" Then
-            ChkBaroUpload.Checked = True
-        Else
-            ChkBaroUpload.Checked = False
-        End If
-        If data("Settings").GetKeyData("ShutdownAfterUpload").Value.ToLower() = "true" Then
-            ChkShutdown.Checked = True
-        Else
-            ChkShutdown.Checked = False
-        End If
+        ChkBaroUpload.Checked = (data("Settings").GetKeyData("BaroUpload").Value.ToLower() = "true")
+        ChkShutdown.Checked = (data("Settings").GetKeyData("ShutdownAfterUpload").Value.ToLower() = "true")
 
     End Sub
 
@@ -68,16 +58,9 @@ Public Class Form1
         defaultSection("ytapikey") = TxtYtKey.Text
         defaultSection("username") = TxtUsername.Text
         defaultSection("keyPassphrase") = TxtPassphrase.Text
-        If ChkBaroUpload.Checked = True Then
-            defaultSection("BaroUpload") = "true"
-        Else
-            defaultSection("BaroUpload") = "false"
-        End If
-        If ChkShutdown.Checked = True Then
-            defaultSection("ShutdownAfterUpload") = "true"
-        Else
-            defaultSection("ShutdownAfterUpload") = "false"
-        End If
+        defaultSection("BaroUpload") = If(ChkBaroUpload.Checked, "true", "false")
+        defaultSection("ShutdownAfterUpload") = If(ChkShutdown.Checked, "true", "false")
+
         parser.WriteFile("config.ini", data)
         MessageBox.Show("설정이 저장되었습니다.", "알림", MessageBoxButtons.OK, MessageBoxIcon.Information)
         HasConfigChanged = False
@@ -108,6 +91,7 @@ Public Class Form1
                 BtnRestart.Enabled = False
                 BtnUpdateDB.Enabled = False
                 GroupBox1.Enabled = False
+
         End Select
 
     End Sub
@@ -118,29 +102,22 @@ Public Class Form1
         openFileDialog.Multiselect = True '
         openFileDialog.Title = "대화 파일을 선택해주세요. (여러개 동시에 선택 가능)"
         openFileDialog.Filter = "카카오톡 대화 내보내기 파일 (*.txt)|*.txt"
-
-        If openFileDialog.ShowDialog() <> DialogResult.OK Then
-            Return New List(Of String)()
-        End If
+        If openFileDialog.ShowDialog() <> DialogResult.OK Then Return New List(Of String)()
 
         Dim filePaths As String() = openFileDialog.FileNames
-
         DelTempfiles()
 
         Dim parser As New FileIniDataParser()
         Dim data As IniData = parser.ReadFile("config.ini")
-
         Dim allowedExtensions As String() = data("Settings")("allowedExtensions").Split(","c)
 
         Dim tempFolderPath As String = Path.Combine(Application.StartupPath, "DB\temp")
-        If Not Directory.Exists(tempFolderPath) Then
-            Directory.CreateDirectory(tempFolderPath)
-        End If
+        If Not Directory.Exists(tempFolderPath) Then Directory.CreateDirectory(tempFolderPath)
 
         ' 정규식 패턴
         Dim filePattern As String = "파일:\s+(.+)"
-        Dim youtubePattern As String = "(https?:\/\/(www\.|m\.)?youtu\.?be(\.com)?\/watch\?v=([^&\n]+)|https?:\/\/youtu\.be\/([^?\n]+))"
-        Dim ShortsPattern As String = "(https?:\/\/(www\.)?youtube\.com\/shorts\/([^\?\/\n]+))"
+        Dim youtubePattern As String = "(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^""&?\/ ]{11})"
+        Dim ShortsPattern As String = "(?:youtube\.com\/shorts\/)([^""&?\/ ]{11})"
         Dim applePattern As String = "(https:\/\/music\.apple\.com\/kr\/[^\s]+)"
         Dim datePattern As String = "--------------- (\d+년 \d+월 \d+일)"
         Dim namePattern As String = "\[([^\]]+)\]"
@@ -149,24 +126,19 @@ Public Class Form1
 
         For Each filePath As String In filePaths
             Dim lines As String() = File.ReadAllLines(filePath)
-
             Dim currentDate As String = ""
 
             For Each line As String In lines
 
                 Dim dateMatch As Match = Regex.Match(line, datePattern)
-                If dateMatch.Success Then
-                    currentDate = dateMatch.Groups(1).Value
-                End If
+                If dateMatch.Success Then currentDate = dateMatch.Groups(1).Value
 
                 Dim fileMatch As Match = Regex.Match(line, filePattern)
                 If fileMatch.Success Then
                     Dim fileName As String = fileMatch.Groups(1).Value
                     Dim nameMatch As Match = Regex.Match(line, namePattern)
                     Dim senderName As String = ""
-                    If nameMatch.Success Then
-                        senderName = nameMatch.Groups(1).Value
-                    End If
+                    If nameMatch.Success Then senderName = nameMatch.Groups(1).Value
 
                     Dim extension As String = Path.GetExtension(fileName).ToLower()
                     If allowedExtensions.Contains(extension) Then
@@ -177,18 +149,11 @@ Public Class Form1
 
                 Dim youtubeMatch As Match = Regex.Match(line, youtubePattern)
                 If youtubeMatch.Success Then
-                    Dim youtubeLink As String = youtubeMatch.Groups(4).Value
-                    If youtubeLink = "" Then
-                        youtubeLink = youtubeMatch.Groups(5).Value
-                    End If
-                    If youtubeLink.Length <> 11 Then
-                        Continue For
-                    End If
+                    Dim youtubeLink As String = youtubeMatch.Groups(1).Value
+                    If youtubeLink.Length <> 11 Then Continue For
                     Dim nameMatch As Match = Regex.Match(line, namePattern)
                     Dim senderName As String = ""
-                    If nameMatch.Success Then
-                        senderName = nameMatch.Groups(1).Value
-                    End If
+                    If nameMatch.Success Then senderName = nameMatch.Groups(1).Value
 
                     Dim extractedLine As String = $"유튜브/{youtubeLink}/{currentDate}/{senderName}"
                     extractedLines.Add(extractedLine)
@@ -196,15 +161,12 @@ Public Class Form1
 
                 Dim ShortsMatch As Match = Regex.Match(line, ShortsPattern)
                 If ShortsMatch.Success Then
-                    Dim youtubeLink As String = ShortsMatch.Groups(3).Value
-                    If youtubeLink.Length <> 11 Then
-                        Continue For
-                    End If
+                    Dim youtubeLink As String = ShortsMatch.Groups(1).Value
+                    If youtubeLink.Length <> 11 Then Continue For
                     Dim nameMatch As Match = Regex.Match(line, namePattern)
                     Dim senderName As String = ""
-                    If nameMatch.Success Then
-                        senderName = nameMatch.Groups(1).Value
-                    End If
+                    If nameMatch.Success Then senderName = nameMatch.Groups(1).Value
+
                     Dim extractedLine As String = $"쇼츠/{youtubeLink}/{currentDate}/{senderName}"
                     extractedLines.Add(extractedLine)
                 End If
@@ -214,13 +176,10 @@ Public Class Form1
                     Dim appleLink As String = appleMatch.Groups(1).Value
                     Dim nameMatch As Match = Regex.Match(line, namePattern)
                     Dim senderName As String = ""
-                    If nameMatch.Success Then
-                        senderName = nameMatch.Groups(1).Value
-                    End If
+                    If nameMatch.Success Then senderName = nameMatch.Groups(1).Value
 
                     Dim extractedLine As String = $"애플/{currentDate}/{senderName}"
                     extractedLines.Add(extractedLine)
-
                     File.AppendAllText(Application.StartupPath & "\DB\temp\apple.txt", extractedLine & Environment.NewLine)
                     File.AppendAllText(Application.StartupPath & "\DB\temp\apple.txt", appleLink & Environment.NewLine)
                 End If
@@ -260,9 +219,7 @@ Public Class Form1
                         Dim existingDateValue As DateTime
 
                         If DateTime.TryParseExact(existingDatePart, newFormat, CultureInfo.InvariantCulture, DateTimeStyles.None, existingDateValue) Then
-                            If dateValue < existingDateValue Then
-                                dict(content) = String.Join("/", contentType, content, datePart, name)
-                            End If
+                            If dateValue < existingDateValue Then dict(content) = String.Join("/", contentType, content, datePart, name)
                         End If
                     Else
                         dict.Add(content, String.Join("/", contentType, content, datePart, name))
@@ -278,21 +235,21 @@ Public Class Form1
         Next
 
         Dim ytPath As String = Application.StartupPath & "\DB\temp\yt.txt"
-        Dim otherContentPath As String = Application.StartupPath & "\DB\temp\files.txt"
+        Dim filePath As String = Application.StartupPath & "\DB\temp\files.txt"
 
         Dim ytLines As New List(Of String)
-        Dim otherContentLines As New List(Of String)
+        Dim fileLines As New List(Of String)
 
         For Each kvp As KeyValuePair(Of String, String) In dict
             If kvp.Value.StartsWith("유튜브/") Or kvp.Value.StartsWith("쇼츠/") Then
                 ytLines.Add(kvp.Value)
             ElseIf kvp.Value.StartsWith("파일/") Then
-                otherContentLines.Add(kvp.Value)
+                fileLines.Add(kvp.Value)
             End If
         Next
 
         File.WriteAllLines(ytPath, ytLines)
-        File.WriteAllLines(otherContentPath, otherContentLines)
+        File.WriteAllLines(filePath, fileLines)
 
         Return New Tuple(Of Integer, Integer)(fileCount, youtubeCount)
 
@@ -300,12 +257,10 @@ Public Class Form1
 
     Private Function RemoveApple() As Integer
 
-        Dim appleFilePath As String = Application.StartupPath & "\DB\temp\apple.txt"
-        If Not File.Exists(appleFilePath) Then
-            Return 0
-        End If
+        Dim FilePath As String = Application.StartupPath & "\DB\temp\apple.txt"
+        If Not File.Exists(FilePath) Then Return 0
 
-        Dim lines As List(Of String) = File.ReadAllLines(appleFilePath).ToList()
+        Dim lines As List(Of String) = File.ReadAllLines(FilePath).ToList()
 
         Dim dict As New Dictionary(Of String, String)
         Dim format As String = "yyyy년 M월 d일"
@@ -335,10 +290,7 @@ Public Class Form1
 
                 If DateTime.TryParseExact(datePart, format, CultureInfo.InvariantCulture, DateTimeStyles.None, dateValue) Then
                     datePart = dateValue.ToString(newFormat)
-
-                    If Not dict.ContainsKey(url) Then
-                        dict.Add(url, String.Join("/", contentType, datePart, name))
-                    End If
+                    If Not dict.ContainsKey(url) Then dict.Add(url, String.Join("/", contentType, datePart, name))
                 End If
             End If
         Next
@@ -387,6 +339,7 @@ Public Class Form1
             Me.Invoke(Sub()
                           ChangeEnables("t")
                           BtnMakeDB.Enabled = False
+                          BtnUpdateDB.Enabled = False
                       End Sub)
         End Try
 
@@ -395,9 +348,7 @@ Public Class Form1
     Private Function ProcessYT(ct As CancellationToken) As Integer
 
         Dim filePath As String = Application.StartupPath & "\DB\temp\yt.txt"
-        If Not File.Exists(filePath) Then
-            Return 0
-        End If
+        If Not File.Exists(filePath) Then Return 0
 
         Dim originalLineCount As Integer = File.ReadAllLines(filePath).Length
         Dim lines As String() = File.ReadAllLines(filePath)
@@ -472,9 +423,7 @@ Public Class Form1
     Public Async Function ProcessApple(ct As CancellationToken) As Task(Of Integer)
 
         Dim filePath As String = Application.StartupPath & "\DB\temp\apple.txt"
-        If Not File.Exists(filePath) Then
-            Return 0
-        End If
+        If Not File.Exists(filePath) Then Return 0
 
         Dim httpClient As New HttpClient()
         Dim outputList As New List(Of String)
@@ -512,7 +461,6 @@ Public Class Form1
 
                     If titleNode IsNot Nothing Then
                         Dim title As String = titleNode.InnerText
-
                         outputList.Add(metaInfo + "/" + title)
                         outputList.Add(url)
                     End If
@@ -533,7 +481,7 @@ Public Class Form1
         Catch ex As OperationCanceledException
             Me.Invoke(Sub()
                           ListBox1.Items.Clear()
-                          ListBox1.Items.Add("작업이 중지되었습니다.")
+                          ListBox1.Items.Add("작업이 중단되었습니다.")
                           ListBox1.Items.Add("")
                       End Sub)
             Return 0
@@ -557,6 +505,11 @@ Public Class Form1
             Using dbConn As New SQLiteConnection($"Data Source={dbPath};Version=3;")
                 dbConn.Open()
 
+                Dim baseDir As String = Application.StartupPath & "\DB\temp\"
+                File.Copy(baseDir & "apple.txt", baseDir & "apple_update.txt", True)
+                File.Copy(baseDir & "files.txt", baseDir & "files_update.txt", True)
+                File.Copy(baseDir & "yt.txt", baseDir & "yt_update.txt", True)
+
                 Dim appleDB As New List(Of String)
                 Using dbCmd As New SQLiteCommand("SELECT 애플뮤직URL FROM music_data WHERE 유형 = '애플뮤직'", dbConn)
                     Using reader As SQLiteDataReader = dbCmd.ExecuteReader()
@@ -566,7 +519,7 @@ Public Class Form1
                     End Using
                 End Using
 
-                Dim txtAppleLines As List(Of String) = File.ReadAllLines(Application.StartupPath & "\DB\temp\apple.txt").ToList()
+                Dim txtAppleLines As List(Of String) = File.ReadAllLines(baseDir & "apple_update.txt").ToList()
                 For Each appleMusicUrl In appleDB
                     For i As Integer = 0 To txtAppleLines.Count - 2 Step 2
                         If txtAppleLines(i + 1) = appleMusicUrl Then
@@ -576,7 +529,7 @@ Public Class Form1
                         End If
                     Next
                 Next
-                File.WriteAllLines(Application.StartupPath & "\DB\temp\apple.txt", txtAppleLines)
+                File.WriteAllLines(baseDir & "apple_update.txt", txtAppleLines)
 
                 Dim filesDB As New List(Of String)
                 Using dbCmd As New SQLiteCommand("SELECT 제목 FROM music_data WHERE 유형='파일'", dbConn)
@@ -587,11 +540,11 @@ Public Class Form1
                     End Using
                 End Using
 
-                Dim txtFileLines As List(Of String) = File.ReadAllLines(Application.StartupPath & "\DB\temp\files.txt").ToList()
+                Dim txtFileLines As List(Of String) = File.ReadAllLines(baseDir & "files_update.txt").ToList()
                 For Each title In filesDB
                     txtFileLines.RemoveAll(Function(line) line.Contains($"/{title}/"))
                 Next
-                File.WriteAllLines(Application.StartupPath & "\DB\temp\files.txt", txtFileLines)
+                File.WriteAllLines(baseDir & "files_update.txt", txtFileLines)
 
                 Dim ytDB As New List(Of String)
                 Using dbCmd As New SQLiteCommand("SELECT 유튜브id FROM music_data", dbConn)
@@ -602,11 +555,11 @@ Public Class Form1
                     End Using
                 End Using
 
-                Dim txtYTLines As List(Of String) = File.ReadAllLines(Application.StartupPath & "\DB\temp\yt.txt").ToList()
+                Dim txtYTLines As List(Of String) = File.ReadAllLines(baseDir & "yt_update.txt").ToList()
                 For Each youtubeId In ytDB
                     txtYTLines.RemoveAll(Function(line) line.Contains($"/{youtubeId}/"))
                 Next
-                File.WriteAllLines(Application.StartupPath & "\DB\temp\yt.txt", txtYTLines)
+                File.WriteAllLines(baseDir & "yt_update.txt", txtYTLines)
 
                 dbConn.Close()
 
@@ -634,9 +587,7 @@ Public Class Form1
             If File.Exists(filePath) Then
                 Using sr As StreamReader = New StreamReader(filePath)
                     Dim lineCount As Integer = File.ReadLines(filePath).Count()
-                    If fileName = "apple.txt" Or fileName = "yt.txt" Then
-                        lineCount = lineCount / 2
-                    End If
+                    If fileName = "apple.txt" Or fileName = "yt.txt" Then lineCount = lineCount / 2
                     totalLines += lineCount
                 End Using
             End If
@@ -645,9 +596,7 @@ Public Class Form1
         Dim dbFileName As String = "DB_" & DateTime.Now.ToString("yyyyMMdd_HHmm") & ".db"
         Dim dbFilePath As String = Application.StartupPath & "\DB\" & dbFileName
 
-        If mode.ToUpper() = "UPDATE" Then
-            File.Copy(exDbFilepath, dbFilePath)
-        End If
+        If mode.ToUpper() = "UPDATE" Then File.Copy(exDbFilepath, dbFilePath)
 
         Using conn As New SQLiteConnection($"Data Source={dbFilePath}")
 
@@ -756,9 +705,9 @@ Public Class Form1
                         If match.Success Then
                             Dim title As String = match.Groups(3).Value.Trim()
                             title = title.Replace("‎Apple Music에서 감상하는 ", String.Empty)
-                            title = title.Replace("‎Apple Music에서 만나는 ", String.Empty)
                             title = title.Replace("‎Apple Music에서 만나는 ", String.Empty)
-                            title = title.Replace("‎Apple Music의 ", String.Empty)
+                            title = title.Replace("‎Apple Music에서 만나는 ", String.Empty)
+                            title = title.Replace("‎Apple Music의 ", String.Empty)
                             title = title.Replace("&amp;", "&")
 
                             cmd.CommandText = "INSERT INTO music_data (유형, 제목, 채널명, 최초전송일, 전송자, 유튜브id, 애플뮤직URL) VALUES (?, ?, ?, ?, ?, ?, ?)"
@@ -825,6 +774,7 @@ Public Class Form1
                           ListBox1.Items.Add("서버 접속 실패")
                           ChangeEnables("t")
                           BtnMakeDB.Enabled = False
+                          BtnUpdateDB.Enabled = False
                       End Sub)
             Return
         End Try
@@ -844,7 +794,7 @@ Public Class Form1
                               ListBox1.Items.Clear()
                               ListBox1.Items.Add("서버 접속 성공")
                               ListBox1.Items.Add("")
-                              ListBox1.Items.Add("서비스를 중단하는 중...")
+                              ListBox1.Items.Add("서비스를 중지하는 중...")
                           End Sub)
 
                 sshClient.RunCommand(stopCommand)
@@ -870,6 +820,7 @@ Public Class Form1
                               ListBox1.Items.Add("업로드 된 DB 파일 : " & Path.GetFileName(dbFilePath))
                               ChangeEnables("t")
                               BtnMakeDB.Enabled = False
+                              BtnUpdateDB.Enabled = False
                           End Sub)
 
                 If ChkShutdown.Checked = True Then System.Diagnostics.Process.Start("shutdown", "/s /t 0")
@@ -882,6 +833,7 @@ Public Class Form1
                           ListBox1.Items.Add("서버 접속 실패")
                           ChangeEnables("t")
                           BtnMakeDB.Enabled = False
+                          BtnUpdateDB.Enabled = False
                       End Sub)
             Return
         End Try
@@ -964,6 +916,7 @@ Public Class Form1
                 Me.Invoke(Sub()
                               ChangeEnables("t")
                               BtnMakeDB.Enabled = False
+                              BtnUpdateDB.Enabled = False
                           End Sub)
 
             End Try
@@ -1010,7 +963,7 @@ Public Class Form1
                                   ListBox1.Items.Clear()
                                   ListBox1.Items.Add("서버 접속 성공")
                                   ListBox1.Items.Add("")
-                                  ListBox1.Items.Add("서비스를 중단하는 중...")
+                                  ListBox1.Items.Add("서비스를 중지하는 중...")
                               End Sub)
 
                     Dim command As SshCommand = sshClient.RunCommand(stopCommand)
@@ -1047,6 +1000,7 @@ Public Class Form1
                 Me.Invoke(Sub()
                               ChangeEnables("t")
                               BtnMakeDB.Enabled = False
+                              BtnUpdateDB.Enabled = False
                           End Sub)
 
             End Try
@@ -1061,9 +1015,7 @@ Public Class Form1
         BtnUpdateDB.Enabled = False
 
         Dim dbFolderPath As String = Path.Combine(Application.StartupPath, "DB")
-        If Not Directory.Exists(dbFolderPath) Then
-            Directory.CreateDirectory(dbFolderPath)
-        End If
+        If Not Directory.Exists(dbFolderPath) Then Directory.CreateDirectory(dbFolderPath)
 
         ConfigLoadFinished = True
 
@@ -1072,18 +1024,18 @@ Public Class Form1
     Private Sub Form1_FormClosing(ByVal sender As System.Object, ByVal e As System.Windows.Forms.FormClosingEventArgs) Handles MyBase.FormClosing
 
         If e.CloseReason = CloseReason.UserClosing Then
-            If BtnMakeDB.Text = "중지하기" Then
+            If BtnMakeDB.Text = "중단하기" Then
                 e.Cancel = True
                 BtnMakeDB_Click(sender, e)
+            ElseIf BtnUpdateDB.Text = "중단하기" Then
+                e.Cancel = True
+                BtnUpdateDB_Click(sender, e)
             End If
         End If
 
         If HasConfigChanged Then
             Dim result As DialogResult = MessageBox.Show("설정의 변경사항이 저장되지 않았습니다." & vbCrLf & "저장하시겠습니까?", "확인", MessageBoxButtons.YesNo, MessageBoxIcon.Question)
-
-            If result = DialogResult.Yes Then
-                SaveConfig()
-            End If
+            If result = DialogResult.Yes Then SaveConfig()
         End If
 
         DelTempfiles()
@@ -1134,32 +1086,27 @@ Public Class Form1
 
                     cts = New CancellationTokenSource()
                     Try
-                        BtnMakeDB.Text = "중지하기"
+                        BtnMakeDB.Text = "중단하기"
                         Dim YTDiff As Integer = Await Task.Run(Function() ProcessYT(cts.Token), cts.Token)
                         Dim AppleDiff As Integer = Await Task.Run(Function() ProcessApple(cts.Token), cts.Token)
 
                         If Not cts.IsCancellationRequested Then
                             BtnMakeDB.Enabled = False
+
                             Dim dbFileName As String = Await Task.Run(Function() WriteDB("CREATE"))
-                            If ChkBaroUpload.Checked = True Then
-                                Await Task.Run(Sub() UploadDB(Application.StartupPath & "\DB\" & dbFileName))
-                            End If
+                            If ChkBaroUpload.Checked = True Then Await Task.Run(Sub() UploadDB(Application.StartupPath & "\DB\" & dbFileName))
+
                             ListBox1.Items.Clear()
-                            If ChkBaroUpload.Checked = True Then
-                                ListBox1.Items.Add("DB 생성 및 업로드를 완료하였습니다.")
-                            Else
-                                ListBox1.Items.Add("DB 생성을 완료하였습니다.")
-                            End If
+                            If ChkBaroUpload.Checked = True Then ListBox1.Items.Add("DB 생성 및 업로드를 완료하였습니다.") Else ListBox1.Items.Add("DB 생성을 완료하였습니다.")
                             ListBox1.Items.Add("")
                             ListBox1.Items.Add($"삭제 / 비공개 영상 : {YTDiff}개")
                             ListBox1.Items.Add($"삭제 / 지역제한 애플뮤직 : {AppleDiff}개")
                             ListBox1.Items.Add("")
-                            If ChkBaroUpload.Checked = True Then
-                                ListBox1.Items.Add($"업로드 된 DB 파일 : {dbFileName}")
-                            Else
-                                ListBox1.Items.Add($"생성된 파일명 : {dbFileName}")
-                            End If
+                            If ChkBaroUpload.Checked = True Then ListBox1.Items.Add($"업로드 된 DB 파일 : {dbFileName}") Else ListBox1.Items.Add($"생성된 파일명 : {dbFileName}")
+
                             ChangeEnables("t")
+                            BtnUpdateDB.Enabled = False
+                            BtnMakeDB.Enabled = False
                             DelTempfiles()
                         End If
                     Catch ex As OperationCanceledException
@@ -1197,35 +1144,35 @@ Public Class Form1
 
                     cts = New CancellationTokenSource()
                     Try
-                        BtnUpdateDB.Text = "중지하기"
+                        BtnUpdateDB.Text = "중단하기"
+
+                        Dim baseDir As String = Application.StartupPath & "\DB\temp\"
+                        For Each fname In {"apple", "files", "yt"}
+                            If File.Exists(baseDir & fname & ".txt") Then File.Delete(baseDir & fname & ".txt")
+                            File.Move(baseDir & fname & "_update.txt", baseDir & fname & ".txt")
+                        Next
+
                         Dim YTDiff As Integer = Await Task.Run(Function() ProcessYT(cts.Token), cts.Token)
                         Dim AppleDiff As Integer = Await Task.Run(Function() ProcessApple(cts.Token), cts.Token)
 
                         If Not cts.IsCancellationRequested Then
-                            BtnMakeDB.Enabled = False
                             BtnUpdateDB.Enabled = False
+
                             Dim dbFileName As String = Await Task.Run(Function() WriteDB("UPDATE", dbInfo.Item1))
-                            If ChkBaroUpload.Checked = True Then
-                                Await Task.Run(Sub() UploadDB(Application.StartupPath & "\DB\" & dbFileName))
-                            End If
+                            If ChkBaroUpload.Checked = True Then Await Task.Run(Sub() UploadDB(Application.StartupPath & "\DB\" & dbFileName))
+
                             ListBox1.Items.Clear()
-                            If ChkBaroUpload.Checked = True Then
-                                ListBox1.Items.Add("DB 업데이트 및 업로드를 완료하였습니다.")
-                            Else
-                                ListBox1.Items.Add("DB 업데이트를 완료하였습니다.")
-                            End If
+                            If ChkBaroUpload.Checked = True Then ListBox1.Items.Add("DB 업데이트 및 업로드를 완료하였습니다.") Else ListBox1.Items.Add("DB 업데이트를 완료하였습니다.")
                             ListBox1.Items.Add("")
                             ListBox1.Items.Add($"업데이트 한 파일 : {dbInfo.Item2}개")
                             ListBox1.Items.Add($"업데이트 한 유튜브 : {dbInfo.Item3 - YTDiff}개")
                             ListBox1.Items.Add($"업데이트 한 애플뮤직 : {dbInfo.Item4 - AppleDiff}개")
                             ListBox1.Items.Add("")
-                            If ChkBaroUpload.Checked = True Then
-                                ListBox1.Items.Add($"업로드 된 DB 파일 : {dbFileName}")
-                            Else
-                                ListBox1.Items.Add($"생성된 파일명 : {dbFileName}")
-                            End If
+                            If ChkBaroUpload.Checked = True Then ListBox1.Items.Add($"업로드 된 DB 파일 : {dbFileName}") Else ListBox1.Items.Add($"생성된 파일명 : {dbFileName}")
 
                             ChangeEnables("t")
+                            BtnUpdateDB.Enabled = False
+                            BtnMakeDB.Enabled = False
                             DelTempfiles()
                         End If
                     Catch ex As OperationCanceledException
@@ -1288,14 +1235,12 @@ Public Class Form1
         openFileDialog.Filter = "DB 파일 (*.db)|*.db"
 
         If openFileDialog.ShowDialog() = DialogResult.OK Then
-
             Dim result As DialogResult = MessageBox.Show("DB 파일을 업로드 하시겠습니까?", "확인", MessageBoxButtons.YesNo, MessageBoxIcon.Question)
             If result = DialogResult.Yes Then
                 Await Task.Run(Sub() UploadDB(openFileDialog.FileName))
             ElseIf result = DialogResult.No Then
                 MessageBox.Show("취소되었습니다.", "알림", MessageBoxButtons.OK, MessageBoxIcon.Information)
             End If
-
         Else
             MessageBox.Show("파일을 선택해주세요.", "경고", MessageBoxButtons.OK, MessageBoxIcon.Warning)
         End If
@@ -1311,9 +1256,7 @@ Public Class Form1
     Private Sub BtnSaveConfig_Click(sender As Object, e As EventArgs) Handles BtnSaveConfig.Click
 
         Dim result As DialogResult = MessageBox.Show("설정을 저장하시겠습니까?", "확인", MessageBoxButtons.YesNo, MessageBoxIcon.Question)
-        If result = DialogResult.Yes Then
-            SaveConfig()
-        End If
+        If result = DialogResult.Yes Then SaveConfig()
 
     End Sub
 

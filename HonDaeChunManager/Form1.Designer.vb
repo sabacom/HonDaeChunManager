@@ -99,7 +99,7 @@ Partial Class Form1
         ' 
         ListBox1.FormattingEnabled = True
         ListBox1.ItemHeight = 15
-        ListBox1.Items.AddRange(New Object() {"HonDaeChun WEB 관리자 ", "버전 0.1.2 / 2023-08-12"})
+        ListBox1.Items.AddRange(New Object() {"HonDaeChun WEB 관리자 ", "버전 0.1.3 / 2023-08-18"})
         ListBox1.Location = New Point(12, 12)
         ListBox1.Name = "ListBox1"
         ListBox1.SelectionMode = SelectionMode.None
@@ -172,9 +172,9 @@ Partial Class Form1
         ChkBaroUpload.AutoSize = True
         ChkBaroUpload.Location = New Point(6, 120)
         ChkBaroUpload.Name = "ChkBaroUpload"
-        ChkBaroUpload.Size = New Size(235, 19)
+        ChkBaroUpload.Size = New Size(231, 19)
         ChkBaroUpload.TabIndex = 29
-        ChkBaroUpload.Text = "DB 생성/업데이트 후 바로 업로드 하기"
+        ChkBaroUpload.Text = "DB 생성/업데이트 후 바로 업로드하기"
         ChkBaroUpload.UseVisualStyleBackColor = True
         ' 
         ' Label5
