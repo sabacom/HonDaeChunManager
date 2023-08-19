@@ -53,7 +53,7 @@ Partial Class Form1
         ' 
         ' BtnOpenFolder
         ' 
-        BtnOpenFolder.Location = New Point(280, 145)
+        BtnOpenFolder.Location = New Point(280, 144)
         BtnOpenFolder.Name = "BtnOpenFolder"
         BtnOpenFolder.Size = New Size(111, 37)
         BtnOpenFolder.TabIndex = 13
@@ -99,7 +99,7 @@ Partial Class Form1
         ' 
         ListBox1.FormattingEnabled = True
         ListBox1.ItemHeight = 15
-        ListBox1.Items.AddRange(New Object() {"HonDaeChun WEB 관리자 ", "버전 0.1.3 / 2023-08-18"})
+        ListBox1.Items.AddRange(New Object() {"HonDaeChun WEB 관리자", "버전 0.1.4 / 2023-08-19"})
         ListBox1.Location = New Point(12, 12)
         ListBox1.Name = "ListBox1"
         ListBox1.SelectionMode = SelectionMode.None
@@ -289,7 +289,7 @@ Partial Class Form1
         ' 
         ' Form1
         ' 
-        AutoScaleDimensions = New SizeF(7F, 15F)
+        AutoScaleDimensions = New SizeF(7.0F, 15.0F)
         AutoScaleMode = AutoScaleMode.Font
         ClientSize = New Size(517, 339)
         Controls.Add(BtnRestart)
