@@ -15,13 +15,20 @@ Imports Renci.SshNet
 Public Class Form1
 
     Private cts As CancellationTokenSource
+    Private ytList, ytUpdateList, appleList, appleUpdateList, fileList, fileUpdateList As New List(Of List(Of String))
     Private ConfigLoadFinished As Boolean = False
     Private HasConfigChanged As Boolean = False
 
-    Private Sub DelTempfiles()
+    Private Sub ClearLists(Optional mode As String = "")
 
-        Dim tempFolderPath As String = Path.Combine(Application.StartupPath, "DB\temp")
-        If Directory.Exists(tempFolderPath) Then Directory.Delete(tempFolderPath, True)
+        ytUpdateList.Clear()
+        appleUpdateList.Clear()
+        fileUpdateList.Clear()
+        If mode = "ALL" Then
+            ytList.Clear()
+            appleList.Clear()
+            fileList.Clear()
+        End If
 
     End Sub
 
@@ -94,24 +101,20 @@ Public Class Form1
 
     End Sub
 
-    Private Async Function PreprocessTextFiles() As Task(Of Tuple(Of Integer, Integer, Integer))
+    Private Async Function PreprocessTextFiles() As Task(Of Boolean)
 
         Dim openFileDialog As New OpenFileDialog()
         openFileDialog.Multiselect = True
         openFileDialog.Title = "대화 파일을 선택해주세요. (여러개 동시에 선택 가능)"
         openFileDialog.Filter = "카카오톡 대화 내보내기 파일 (*.txt)|*.txt"
-        If openFileDialog.ShowDialog() <> DialogResult.OK Then Return New Tuple(Of Integer, Integer, Integer)(-1, -1, -1)
-
-        DelTempfiles()
+        If openFileDialog.ShowDialog() <> DialogResult.OK Then Return False
         Dim txtfilePaths As String() = openFileDialog.FileNames
-        Dim tempFolderPath As String = Path.Combine(Application.StartupPath, "DB\temp")
-        If Not Directory.Exists(tempFolderPath) Then Directory.CreateDirectory(tempFolderPath)
 
+        ClearLists("ALL")
         Dim parser As New FileIniDataParser()
         Dim data As IniData = parser.ReadFile("config.ini")
         Dim allowedExtensions As String() = data("Settings")("allowedExtensions").Split(","c)
 
-        ' 정규식 패턴
         Dim filePattern As String = "파일:\s+(.+)"
         Dim youtubePattern As String = "(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^""&?\/ ]{11})"
         Dim shortsPattern As String = "(?:youtube\.com\/shorts\/)([^""&?\/ ]{11})"
@@ -173,60 +176,77 @@ Public Class Form1
         Dim dict As New Dictionary(Of String, Tuple(Of String, String, DateTime, String))
         Dim format As String = "yyyy년 M월 d일"
         Dim newFormat As String = "yyyy.MM.dd"
-        Dim youtubeCount As Integer = 0
-        Dim appleCount As Integer = 0
-        Dim fileCount As Integer = 0
 
         For Each line As List(Of String) In resultList
             If line.Count >= 4 Then
-                Dim contentType As String = line(0)
-                Dim content As String = line(1)
-                Dim datePart As String = line(2)
-                Dim name As String = line(3)
-
                 Dim dateValue As DateTime
-
-                If DateTime.TryParseExact(datePart, format, CultureInfo.InvariantCulture, DateTimeStyles.None, dateValue) Then
-                    If dict.ContainsKey(content) Then
-                        Dim existingData = dict(content)
-                        If dateValue < existingData.Item3 Then dict(content) = New Tuple(Of String, String, DateTime, String)(contentType, content, dateValue, name)
+                If DateTime.TryParseExact(line(2), format, CultureInfo.InvariantCulture, DateTimeStyles.None, dateValue) Then
+                    If dict.ContainsKey(line(1)) Then
+                        Dim existingData = dict(line(1))
+                        If dateValue < existingData.Item3 Then dict(line(1)) = New Tuple(Of String, String, DateTime, String)(line(0), line(1), dateValue, line(3))
                     Else
-                        dict.Add(content, New Tuple(Of String, String, DateTime, String)(contentType, content, dateValue, name))
-
-                        If contentType = "유튜브" Or contentType = "쇼츠" Then
-                            youtubeCount += 1
-                        ElseIf contentType = "애플" Then
-                            appleCount += 1
-                        ElseIf contentType = "파일" Then
-                            fileCount += 1
-                        End If
+                        dict.Add(line(1), New Tuple(Of String, String, DateTime, String)(line(0), line(1), dateValue, line(3)))
                     End If
                 End If
             End If
         Next
 
-        Dim ytLines As New List(Of String)
-        Dim appleLines As New List(Of String)
-        Dim fileLines As New List(Of String)
-
         For Each kvp As KeyValuePair(Of String, Tuple(Of String, String, DateTime, String)) In dict
             Dim formattedDate As String = kvp.Value.Item3.ToString(newFormat)
-
             If kvp.Value.Item1 = "유튜브" Or kvp.Value.Item1 = "쇼츠" Then
-                ytLines.Add(String.Join("/", kvp.Value.Item1, kvp.Value.Item2, formattedDate, kvp.Value.Item4))
+                ytList.Add(New List(Of String)({kvp.Value.Item1, kvp.Value.Item2, formattedDate, kvp.Value.Item4}))
             ElseIf kvp.Value.Item1 = "애플" Then
-                appleLines.Add(String.Join("/", kvp.Value.Item1, formattedDate, kvp.Value.Item4))
-                appleLines.Add(kvp.Value.Item2)
+                appleList.Add(New List(Of String)({kvp.Value.Item1, kvp.Value.Item2, formattedDate, kvp.Value.Item4}))
             ElseIf kvp.Value.Item1 = "파일" Then
-                fileLines.Add(String.Join("/", kvp.Value.Item1, kvp.Value.Item2, formattedDate, kvp.Value.Item4))
+                fileList.Add(New List(Of String)({kvp.Value.Item1, kvp.Value.Item2, formattedDate, kvp.Value.Item4}))
             End If
         Next
 
-        Await File.WriteAllLinesAsync(Application.StartupPath & "\DB\temp\yt.txt", ytLines)
-        Await File.WriteAllLinesAsync(Application.StartupPath & "\DB\temp\apple.txt", appleLines)
-        Await File.WriteAllLinesAsync(Application.StartupPath & "\DB\temp\files.txt", fileLines)
+        Return True
 
-        Return New Tuple(Of Integer, Integer, Integer)(fileCount, youtubeCount, appleCount)
+    End Function
+
+    Private Async Function PreprocessUpdate() As Task(Of Tuple(Of String, Boolean))
+
+        Dim openFileDialog As New OpenFileDialog
+        openFileDialog.InitialDirectory = Path.Combine(Application.StartupPath, "DB")
+        openFileDialog.Title = "DB 파일을 선택해주세요."
+        openFileDialog.Filter = "DB 파일 (*.db)|*.db"
+        If openFileDialog.ShowDialog() <> DialogResult.OK Then Return New Tuple(Of String, Boolean)("", False)
+
+        ClearLists()
+        Dim dbPath As String = openFileDialog.FileName
+        Using dbConn As New SQLiteConnection($"Data Source={dbPath};Version=3;")
+            Await dbConn.OpenAsync()
+
+            Dim ytDB As New List(Of String)
+            Using dbCmd As New SQLiteCommand("SELECT 유튜브id FROM music_data", dbConn)
+                Using reader As SQLiteDataReader = Await dbCmd.ExecuteReaderAsync()
+                    While Await reader.ReadAsync() : ytDB.Add(reader("유튜브id").ToString()) : End While
+                End Using
+            End Using
+            ytUpdateList = ytList.Where(Function(line) Not ytDB.Contains(line(1))).ToList()
+
+            Dim appleDB As New List(Of String)
+            Using dbCmd As New SQLiteCommand("SELECT 애플뮤직URL FROM music_data WHERE 유형 = '애플뮤직'", dbConn)
+                Using reader As SQLiteDataReader = Await dbCmd.ExecuteReaderAsync()
+                    While Await reader.ReadAsync() : appleDB.Add(reader("애플뮤직URL").ToString()) : End While
+                End Using
+            End Using
+            appleUpdateList = appleList.Where(Function(line) Not appleDB.Contains(line(1))).ToList()
+
+            Dim fileDB As New List(Of String)
+            Using dbCmd As New SQLiteCommand("SELECT 제목 FROM music_data WHERE 유형='파일'", dbConn)
+                Using reader As SQLiteDataReader = Await dbCmd.ExecuteReaderAsync()
+                    While Await reader.ReadAsync() : fileDB.Add(reader("제목").ToString()) : End While
+                End Using
+            End Using
+            fileUpdateList = fileList.Where(Function(line) Not fileDB.Contains(line(1))).ToList()
+
+            dbConn.Close()
+        End Using
+
+        Return New Tuple(Of String, Boolean)(dbPath, True)
 
     End Function
 
@@ -247,9 +267,9 @@ Public Class Form1
                 Dim title As String = videoResponse.Items(0).Snippet.Title
                 Dim channelName As String = videoResponse.Items(0).Snippet.ChannelTitle
                 Return Tuple.Create(title, channelName)
+            Else Return Tuple.Create("", "")
             End If
 
-            Return Tuple.Create("", "")
         Catch ex As Google.GoogleApiException
             If ex.HttpStatusCode = HttpStatusCode.BadRequest AndAlso ex.Message.Contains("API key not valid") Then
                 MessageBox.Show("유튜브 API 키가 유효하지 않습니다.", "경고", MessageBoxButtons.OK, MessageBoxIcon.Warning)
@@ -261,6 +281,7 @@ Public Class Form1
                           ChangeEnables("t")
                           BtnMakeDB.Enabled = False
                           BtnUpdateDB.Enabled = False
+                          ClearLists("ALL")
                       End Sub)
         End Try
 
@@ -268,108 +289,75 @@ Public Class Form1
 
     Private Function ProcessYT(ct As CancellationToken) As Tuple(Of List(Of List(Of String)), Integer)
 
-        Dim filePath As String = Application.StartupPath & "\DB\temp\yt.txt"
-        If Not File.Exists(filePath) Then Return New Tuple(Of List(Of List(Of String)), Integer)(New List(Of List(Of String))(), 0)
-
         Dim processedCount As Integer = 0
         Dim resultList As New List(Of List(Of String))()
-        Dim regex As New Regex("^(.+?)/([^/]+)/([^/]+)/(.+)$")
-        Dim lines As String() = File.ReadAllLines(filePath)
-        Dim OriginLineCount As Integer = lines.Length
 
         Me.Invoke(Sub()
                       ListBox1.Items.Clear()
-                      ListBox1.Items.Add($"{OriginLineCount}개의 유튜브 정보를 받아오는 중...")
+                      ListBox1.Items.Add($"{ytList.Count}개의 유튜브 정보를 받아오는 중...")
                       ListBox1.Items.Add("")
                   End Sub)
 
         Try
-            For Each line As String In lines
+            For Each ytEntry As List(Of String) In ytList
                 ct.ThrowIfCancellationRequested()
-
                 processedCount += 1
                 Me.Invoke(Sub()
-                              ListBox1.Items(1) = $"({processedCount}/{OriginLineCount})"
+                              ListBox1.Items(1) = $"({processedCount}/{ytList.Count})"
                           End Sub)
 
-                Dim match As Match = regex.Match(line)
-
-                If Not match.Success Then
-                    resultList.Add(New List(Of String)({line}))
-                    Continue For
-                End If
-
-                Dim contentType As String = match.Groups(1).Value
-                Dim videoId As String = match.Groups(2).Value
-                Dim datePart As String = match.Groups(3).Value
-                Dim name As String = match.Groups(4).Value
-
-                If contentType.ToLower() = "유튜브" Or contentType.ToLower() = "쇼츠" Then
-                    Dim videoInfo As Tuple(Of String, String) = GetVideoInfo(videoId)
+                If ytEntry(0).ToLower() = "유튜브" Or ytEntry(0).ToLower() = "쇼츠" Then
+                    Dim videoInfo As Tuple(Of String, String) = GetVideoInfo(ytEntry(1))
                     If videoInfo IsNot Nothing AndAlso Not String.IsNullOrWhiteSpace(videoInfo.Item1) AndAlso Not String.IsNullOrWhiteSpace(videoInfo.Item2) Then
-                        resultList.Add(New List(Of String)({contentType, datePart, name, videoInfo.Item1, videoInfo.Item2, videoId}))
+                        resultList.Add(New List(Of String)({ytEntry(0), ytEntry(2), ytEntry(3), videoInfo.Item1, videoInfo.Item2, ytEntry(1)}))
                     End If
-                Else
-                    resultList.Add(New List(Of String)({line}))
                 End If
             Next
-
-            Return New Tuple(Of List(Of List(Of String)), Integer)(resultList, OriginLineCount - resultList.Count)
 
         Catch ex As OperationCanceledException
             Me.Invoke(Sub()
                           ListBox1.Items.Clear()
                           ListBox1.Items.Add("작업이 중단되었습니다.")
-                          ListBox1.Items.Add("")
-                          DelTempfiles()
                       End Sub)
+            ClearLists("ALL")
             Return Nothing
         End Try
+
+        Return New Tuple(Of List(Of List(Of String)), Integer)(resultList, ytList.Count - resultList.Count)
 
     End Function
 
     Public Async Function ProcessApple(ct As CancellationToken) As Task(Of Tuple(Of List(Of List(Of String)), Integer))
 
-        Dim filePath As String = Application.StartupPath & "\DB\temp\apple.txt"
-        If Not File.Exists(filePath) Then Return New Tuple(Of List(Of List(Of String)), Integer)(New List(Of List(Of String))(), 0)
-
         Dim processedcount As Integer = 0
         Dim resultList As New List(Of List(Of String))()
         Dim httpClient As New HttpClient()
-        Dim lines As String() = File.ReadAllLines(filePath)
-        Dim originLineCount As Integer = lines.Length / 2
 
         Me.Invoke(Sub()
                       ListBox1.Items.Clear()
-                      ListBox1.Items.Add($"{originLineCount}개의 애플뮤직 정보를 받아오는 중...")
+                      ListBox1.Items.Add($"{appleList.Count}개의 애플뮤직 정보를 받아오는 중...")
                       ListBox1.Items.Add("")
                   End Sub)
 
         Try
-            For i As Integer = 0 To lines.Length - 1 Step 2
+            For Each appleEntry As List(Of String) In appleList
                 ct.ThrowIfCancellationRequested()
-
                 processedcount += 1
                 Me.Invoke(Sub()
-                              ListBox1.Items(1) = $"({processedcount}/{originLineCount})"
+                              ListBox1.Items(1) = $"({processedcount}/{appleList.Count})"
                           End Sub)
 
-                Dim metainfo As String = lines(i)
-                Dim url As String = lines(i + 1)
-
                 Try
-                    Dim data As String = Await httpClient.GetStringAsync(url)
+                    Dim data As String = Await httpClient.GetStringAsync(appleEntry(1))
                     Dim doc As New HtmlDocument()
                     doc.LoadHtml(data)
                     Dim titleNode As HtmlNode = doc.DocumentNode.SelectSingleNode("//title")
 
                     If titleNode IsNot Nothing Then
                         Dim title As String = titleNode.InnerText.Trim()
-                        Dim metaInfoParts As Match = Regex.Match(metainfo, "(애플)/([^/]+)/(.+)")
-                        resultList.Add(New List(Of String)({"애플", metaInfoParts.Groups(2).Value, metaInfoParts.Groups(3).Value, title, url}))
+                        resultList.Add(New List(Of String)({appleEntry(0), appleEntry(2), appleEntry(3), title, appleEntry(1)}))
                     End If
                 Catch ex As Exception
-
                 End Try
 
                 Await Task.Delay(350)
@@ -379,213 +367,139 @@ Public Class Form1
             Me.Invoke(Sub()
                           ListBox1.Items.Clear()
                           ListBox1.Items.Add("작업이 중단되었습니다.")
-                          ListBox1.Items.Add("")
                       End Sub)
+            ClearLists("ALL")
             Return Nothing
         End Try
 
-        Return New Tuple(Of List(Of List(Of String)), Integer)(resultList, originLineCount - resultList.Count)
+        Return New Tuple(Of List(Of List(Of String)), Integer)(resultList, appleList.Count - resultList.Count)
 
     End Function
 
-    Private Function PreprocessUpdate() As Tuple(Of String, Integer, Integer, Integer)
+    Private Function WriteDB(ct As CancellationToken, ByVal mode As String, ByVal ytResultList As List(Of List(Of String)), ByVal appleResultList As List(Of List(Of String)), Optional ByVal exDbFilepath As String = "") As String
 
-        Dim openFileDialog As New OpenFileDialog
-        openFileDialog.InitialDirectory = Path.Combine(Application.StartupPath, "DB")
-        openFileDialog.Title = "DB 파일을 선택해주세요."
-        openFileDialog.Filter = "DB 파일 (*.db)|*.db"
-
-        If openFileDialog.ShowDialog() = DialogResult.OK Then
-            Dim dbPath As String = openFileDialog.FileName
-            Dim baseDir As String = Application.StartupPath & "\DB\temp\"
-            Dim ytCount As Integer = 0
-            Dim appleCount As Integer = 0
-            Dim fileCount As Integer = 0
-
-            Using dbConn As New SQLiteConnection($"Data Source={dbPath};Version=3;")
-                dbConn.Open()
-
-                If File.Exists(baseDir & "yt.txt") Then
-                    Dim ytDB As New List(Of String)
-                    Using dbCmd As New SQLiteCommand("SELECT 유튜브id FROM music_data", dbConn)
-                        Using reader As SQLiteDataReader = dbCmd.ExecuteReader()
-                            While reader.Read() : ytDB.Add(reader("유튜브id").ToString()) : End While
-                        End Using
-                    End Using
-
-                    File.Copy(baseDir & "yt.txt", baseDir & "yt_update.txt", True)
-                    Dim txtYTLines As List(Of String) = File.ReadAllLines(baseDir & "yt_update.txt").ToList()
-                    For Each youtubeId In ytDB : txtYTLines.RemoveAll(Function(line) line.Contains($"/{youtubeId}/")) : Next
-                    File.WriteAllLines(baseDir & "yt_update.txt", txtYTLines)
-                    ytCount = txtYTLines.Count
-                End If
-
-                If File.Exists(baseDir & "apple.txt") Then
-                    Dim appleDB As New List(Of String)
-                    Using dbCmd As New SQLiteCommand("SELECT 애플뮤직URL FROM music_data WHERE 유형 = '애플뮤직'", dbConn)
-                        Using reader As SQLiteDataReader = dbCmd.ExecuteReader()
-                            While reader.Read() : appleDB.Add(reader("애플뮤직URL").ToString()) : End While
-                        End Using
-                    End Using
-
-                    File.Copy(baseDir & "apple.txt", baseDir & "apple_update.txt", True)
-                    Dim txtAppleLines As List(Of String) = File.ReadAllLines(baseDir & "apple_update.txt").ToList()
-                    For Each appleMusicUrl In appleDB
-                        For i As Integer = 0 To txtAppleLines.Count - 2 Step 2
-                            If txtAppleLines(i + 1) = appleMusicUrl Then
-                                txtAppleLines.RemoveAt(i + 1)
-                                txtAppleLines.RemoveAt(i)
-                                Exit For
-                            End If
-                        Next
-                    Next
-                    File.WriteAllLines(baseDir & "apple_update.txt", txtAppleLines)
-                    appleCount = txtAppleLines.Count / 2
-                End If
-
-                If File.Exists(baseDir & "files.txt") Then
-                    Dim filesDB As New List(Of String)
-                    Using dbCmd As New SQLiteCommand("SELECT 제목 FROM music_data WHERE 유형='파일'", dbConn)
-                        Using reader As SQLiteDataReader = dbCmd.ExecuteReader()
-                            While reader.Read() : filesDB.Add(reader("제목").ToString()) : End While
-                        End Using
-                    End Using
-
-                    File.Copy(baseDir & "files.txt", baseDir & "files_update.txt", True)
-                    Dim txtFileLines As List(Of String) = File.ReadAllLines(baseDir & "files_update.txt").ToList()
-                    For Each title In filesDB : txtFileLines.RemoveAll(Function(line) line.Contains($"/{title}/")) : Next
-                    File.WriteAllLines(baseDir & "files_update.txt", txtFileLines)
-                    fileCount = txtFileLines.Count
-                End If
-
-                dbConn.Close()
-
-            End Using
-            Return New Tuple(Of String, Integer, Integer, Integer)(dbPath, fileCount, ytCount, appleCount)
-
-        End If
-
-    End Function
-
-    Private Function WriteDB(ByVal mode As String, ByVal ytData As List(Of List(Of String)), ByVal appleData As List(Of List(Of String)), Optional ByVal exDbFilepath As String = "") As String
-
-        Dim fileCount As Integer = If(File.Exists(Path.Combine(Application.StartupPath, "DB\temp", "files.txt")), File.ReadLines(Path.Combine(Application.StartupPath, "DB\temp", "files.txt")).Count(), 0)
-        Dim totalCount As Integer = ytData.Count + appleData.Count + fileCount
+        Dim totalCount As Integer = ytResultList.Count + appleResultList.Count + fileList.Count
         Dim processedCount As Integer = 0
 
         Dim dbFileName As String = "DB_" & DateTime.Now.ToString("yyyyMMdd_HHmm") & ".db"
         Dim dbFilePath As String = Application.StartupPath & "\DB\" & dbFileName
         If mode.ToUpper() = "UPDATE" Then File.Copy(exDbFilepath, dbFilePath)
 
-        Using conn As New SQLiteConnection($"Data Source={dbFilePath}")
-            conn.Open()
+        Try
+            Using conn As New SQLiteConnection($"Data Source={dbFilePath}")
+                conn.Open()
+                Using cmd As New SQLiteCommand(conn)
 
-            Using cmd As New SQLiteCommand(conn)
-
-                cmd.CommandText = "CREATE TABLE IF NOT EXISTS music_data (유형 TEXT, 제목 TEXT, 채널명 TEXT, 최초전송일 TEXT, 전송자 TEXT, 유튜브id TEXT, 애플뮤직URL TEXT)"
-                cmd.ExecuteNonQuery()
-                cmd.CommandText = "CREATE TABLE IF NOT EXISTS db_info (id INTEGER PRIMARY KEY, created_at DATETIME)"
-                cmd.ExecuteNonQuery()
-
-                If mode.ToUpper() = "CREATE" Then
-                    cmd.CommandText = "INSERT INTO db_info (id, created_at) VALUES (?, ?)"
-                    cmd.Parameters.AddWithValue("id", 1)
-                    cmd.Parameters.AddWithValue("created_at", DateTime.Now.ToString("yyyy-MM-dd HH:mm"))
+                    cmd.CommandText = "CREATE TABLE IF NOT EXISTS music_data (유형 TEXT, 제목 TEXT, 채널명 TEXT, 최초전송일 TEXT, 전송자 TEXT, 유튜브id TEXT, 애플뮤직URL TEXT)"
                     cmd.ExecuteNonQuery()
-                    cmd.Parameters.Clear()
-                ElseIf mode.ToUpper() = "UPDATE" Then
-                    cmd.CommandText = "UPDATE db_info SET created_at = ? WHERE id = 1"
-                    cmd.Parameters.AddWithValue("created_at", DateTime.Now.ToString("yyyy-MM-dd HH:mm"))
+                    cmd.CommandText = "CREATE TABLE IF NOT EXISTS db_info (id INTEGER PRIMARY KEY, created_at DATETIME)"
                     cmd.ExecuteNonQuery()
-                    cmd.Parameters.Clear()
-                End If
 
-                Me.Invoke(Sub()
-                              ListBox1.Items.Clear()
-                              ListBox1.Items.Add("DB 파일을 생성하는 중...")
-                              ListBox1.Items.Add("")
-                          End Sub)
-
-                If ytData.Count > 0 Then
-                    For Each ytItem In ytData
-                        cmd.CommandText = "INSERT INTO music_data (유형, 제목, 채널명, 최초전송일, 전송자, 유튜브id, 애플뮤직URL) VALUES (?, ?, ?, ?, ?, ?, ?)"
-                        cmd.Parameters.AddWithValue("유형", ytItem(0))
-                        cmd.Parameters.AddWithValue("제목", ytItem(3))
-                        cmd.Parameters.AddWithValue("채널명", ytItem(4))
-                        cmd.Parameters.AddWithValue("최초전송일", ytItem(1))
-                        cmd.Parameters.AddWithValue("전송자", ytItem(2))
-                        cmd.Parameters.AddWithValue("유튜브id", ytItem(5))
-                        cmd.Parameters.AddWithValue("애플뮤직URL", Nothing)
+                    If mode.ToUpper() = "CREATE" Then
+                        cmd.CommandText = "INSERT INTO db_info (id, created_at) VALUES (?, ?)"
+                        cmd.Parameters.AddWithValue("id", 1)
+                        cmd.Parameters.AddWithValue("created_at", DateTime.Now.ToString("yyyy-MM-dd HH:mm"))
                         cmd.ExecuteNonQuery()
                         cmd.Parameters.Clear()
-                        processedCount += 1
-                        Me.Invoke(Sub()
-                                      ListBox1.Items(1) = $"({processedCount}/{totalCount})"
-                                  End Sub)
-                    Next
-                End If
-
-                If appleData.Count > 0 Then
-                    For Each appleItem In appleData
-                        Dim Title As String = appleItem(3)
-                        Title = Regex.Replace(Title, "\u200E", String.Empty)
-                        Title = Title.Replace("Apple Music에서 감상하는 ", String.Empty)
-                        Title = Title.Replace("Apple Music에서 만나는 ", String.Empty)
-                        Title = Title.Replace("Apple Music의 ", String.Empty)
-                        Title = Title.Replace("&amp;", "&")
-
-                        cmd.CommandText = "INSERT INTO music_data (유형, 제목, 채널명, 최초전송일, 전송자, 유튜브id, 애플뮤직URL) VALUES (?, ?, ?, ?, ?, ?, ?)"
-                        cmd.Parameters.AddWithValue("유형", "애플뮤직")
-                        cmd.Parameters.AddWithValue("제목", Title)
-                        cmd.Parameters.AddWithValue("채널명", Nothing)
-                        cmd.Parameters.AddWithValue("최초전송일", appleItem(1))
-                        cmd.Parameters.AddWithValue("전송자", appleItem(2))
-                        cmd.Parameters.AddWithValue("유튜브id", Nothing)
-                        cmd.Parameters.AddWithValue("애플뮤직URL", appleItem(4))
+                    ElseIf mode.ToUpper() = "UPDATE" Then
+                        cmd.CommandText = "UPDATE db_info SET created_at = ? WHERE id = 1"
+                        cmd.Parameters.AddWithValue("created_at", DateTime.Now.ToString("yyyy-MM-dd HH:mm"))
                         cmd.ExecuteNonQuery()
                         cmd.Parameters.Clear()
-                        processedCount += 1
-                        Me.Invoke(Sub()
-                                      ListBox1.Items(1) = $"({processedCount}/{totalCount})"
-                                  End Sub)
-                    Next
-                End If
+                    End If
 
-                If File.Exists(Application.StartupPath & "\DB\temp\files.txt") Then
-                    Dim fileLines As List(Of String) = File.ReadLines(Application.StartupPath & "\DB\temp\files.txt").ToList()
-                    Dim regex As New Regex("^(.+?)/([^/]+)/([^/]+)/(.+)$")
+                    Me.Invoke(Sub()
+                                  ListBox1.Items.Clear()
+                                  ListBox1.Items.Add("DB 파일을 생성하는 중...")
+                                  ListBox1.Items.Add("")
+                              End Sub)
 
-                    For Each line As String In fileLines
-                        Dim match As Match = regex.Match(line)
-                        If Not match.Success Then Continue For
+                    If ytResultList.Count > 0 Then
+                        For Each ytItem In ytResultList
+                            ct.ThrowIfCancellationRequested()
+                            cmd.CommandText = "INSERT INTO music_data (유형, 제목, 채널명, 최초전송일, 전송자, 유튜브id, 애플뮤직URL) VALUES (?, ?, ?, ?, ?, ?, ?)"
+                            cmd.Parameters.AddWithValue("유형", ytItem(0))
+                            cmd.Parameters.AddWithValue("제목", ytItem(3))
+                            cmd.Parameters.AddWithValue("채널명", ytItem(4))
+                            cmd.Parameters.AddWithValue("최초전송일", ytItem(1))
+                            cmd.Parameters.AddWithValue("전송자", ytItem(2))
+                            cmd.Parameters.AddWithValue("유튜브id", ytItem(5))
+                            cmd.Parameters.AddWithValue("애플뮤직URL", Nothing)
+                            cmd.ExecuteNonQuery()
+                            cmd.Parameters.Clear()
+                            processedCount += 1
+                            Me.Invoke(Sub()
+                                          ListBox1.Items(1) = $"({processedCount}/{totalCount})"
+                                      End Sub)
+                        Next
+                    End If
 
-                        cmd.CommandText = "INSERT INTO music_data (유형, 제목, 채널명, 최초전송일, 전송자, 유튜브id, 애플뮤직URL) VALUES (?, ?, ?, ?, ?, ?, ?)"
-                        cmd.Parameters.AddWithValue("유형", "파일")
-                        cmd.Parameters.AddWithValue("제목", match.Groups(2).Value)
-                        cmd.Parameters.AddWithValue("채널명", Nothing)
-                        cmd.Parameters.AddWithValue("최초전송일", match.Groups(3).Value)
-                        cmd.Parameters.AddWithValue("전송자", match.Groups(4).Value)
-                        cmd.Parameters.AddWithValue("유튜브id", Nothing)
-                        cmd.Parameters.AddWithValue("애플뮤직URL", Nothing)
-                        cmd.ExecuteNonQuery()
+                    If appleResultList.Count > 0 Then
+                        For Each appleItem In appleResultList
+                            ct.ThrowIfCancellationRequested()
+                            Dim Title As String = appleItem(3)
+                            Title = Regex.Replace(Title, "\u200E", String.Empty)
+                            Title = Title.Replace("Apple Music에서 감상하는 ", String.Empty)
+                            Title = Title.Replace("Apple Music에서 만나는 ", String.Empty)
+                            Title = Title.Replace("Apple Music에서 만나는 ", String.Empty)
+                            Title = Title.Replace("Apple Music의 ", String.Empty)
+                            Title = Title.Replace("&amp;", "&")
+                            cmd.CommandText = "INSERT INTO music_data (유형, 제목, 채널명, 최초전송일, 전송자, 유튜브id, 애플뮤직URL) VALUES (?, ?, ?, ?, ?, ?, ?)"
+                            cmd.Parameters.AddWithValue("유형", "애플뮤직")
+                            cmd.Parameters.AddWithValue("제목", Title)
+                            cmd.Parameters.AddWithValue("채널명", Nothing)
+                            cmd.Parameters.AddWithValue("최초전송일", appleItem(1))
+                            cmd.Parameters.AddWithValue("전송자", appleItem(2))
+                            cmd.Parameters.AddWithValue("유튜브id", Nothing)
+                            cmd.Parameters.AddWithValue("애플뮤직URL", appleItem(4))
+                            cmd.ExecuteNonQuery()
+                            cmd.Parameters.Clear()
+                            processedCount += 1
+                            Me.Invoke(Sub()
+                                          ListBox1.Items(1) = $"({processedCount}/{totalCount})"
+                                      End Sub)
+                        Next
+                    End If
 
-                        processedCount += 1
-                        Me.Invoke(Sub()
-                                      ListBox1.Items(1) = $"({processedCount}/{totalCount})"
-                                  End Sub)
-                    Next
+                    If fileList.Count > 0 Then
+                        For Each fileItem As List(Of String) In fileList
+                            ct.ThrowIfCancellationRequested()
+                            cmd.CommandText = "INSERT INTO music_data (유형, 제목, 채널명, 최초전송일, 전송자, 유튜브id, 애플뮤직URL) VALUES (?, ?, ?, ?, ?, ?, ?)"
+                            cmd.Parameters.AddWithValue("유형", fileItem(0))
+                            cmd.Parameters.AddWithValue("제목", fileItem(1))
+                            cmd.Parameters.AddWithValue("채널명", Nothing)
+                            cmd.Parameters.AddWithValue("최초전송일", fileItem(2))
+                            cmd.Parameters.AddWithValue("전송자", fileItem(3))
+                            cmd.Parameters.AddWithValue("유튜브id", Nothing)
+                            cmd.Parameters.AddWithValue("애플뮤직URL", Nothing)
+                            cmd.ExecuteNonQuery()
+                            cmd.Parameters.Clear()
+                            processedCount += 1
+                            Me.Invoke(Sub()
+                                          ListBox1.Items(1) = $"({processedCount}/{totalCount})"
+                                      End Sub)
+                        Next
+                    End If
 
-                    cmd.Parameters.Clear()
-                End If
+                End Using
+                conn.Close()
             End Using
-            conn.Close()
-        End Using
+
+        Catch ex As OperationCanceledException
+            Me.Invoke(Sub()
+                          ListBox1.Items.Clear()
+                          ListBox1.Items.Add("작업이 중단되었습니다.")
+                      End Sub)
+            If File.Exists(dbFilePath) Then File.Delete(dbFilePath)
+            ClearLists("ALL")
+            Return Nothing
+        End Try
 
         Return dbFileName
 
     End Function
 
-    Private Sub UploadDB(dbFilePath As String)
+    Private Function UploadDB(dbFilePath As String) As Boolean
 
         Me.Invoke(Sub()
                       ChangeEnables("f")
@@ -615,7 +529,7 @@ Public Class Form1
                           BtnMakeDB.Enabled = False
                           BtnUpdateDB.Enabled = False
                       End Sub)
-            Return
+            Return False
         End Try
 
         Dim keyFiles As New List(Of PrivateKeyFile) From {keyFile}
@@ -664,9 +578,10 @@ Public Class Form1
                               BtnUpdateDB.Enabled = False
                           End Sub)
 
-                If ChkShutdown.Checked = True Then System.Diagnostics.Process.Start("shutdown", "/s /t 0")
+                If ChkShutdown.Checked = True Then System.Diagnostics.Process.Start("shutdown", "/s /t 0") ' 설정 저장창 떠도 강제종료되나 테스트 해보기
 
             End Using
+            Return True
 
         Catch ex As Exception
             Me.Invoke(Sub()
@@ -676,10 +591,10 @@ Public Class Form1
                           BtnMakeDB.Enabled = False
                           BtnUpdateDB.Enabled = False
                       End Sub)
-            Return
+            Return False
         End Try
 
-    End Sub
+    End Function
 
     Private Sub TestSSH()
 
@@ -819,7 +734,6 @@ Public Class Form1
                               ListBox1.Items.Clear()
                               ListBox1.Items.Add("서버 접속 실패")
                           End Sub)
-
                 Return
             Catch ex As Exception
                 Me.Invoke(Sub()
@@ -833,7 +747,6 @@ Public Class Form1
                               BtnMakeDB.Enabled = False
                               BtnUpdateDB.Enabled = False
                           End Sub)
-
             End Try
         End If
 
@@ -841,15 +754,13 @@ Public Class Form1
 
     Private Sub Form1_Load(sender As Object, e As EventArgs) Handles MyBase.Load
 
-        DelTempfiles()
-        LoadConfig()
-        BtnMakeDB.Enabled = False
-        BtnUpdateDB.Enabled = False
-
         Dim dbFolderPath As String = Path.Combine(Application.StartupPath, "DB")
         If Not Directory.Exists(dbFolderPath) Then Directory.CreateDirectory(dbFolderPath)
 
+        LoadConfig()
         ConfigLoadFinished = True
+        BtnMakeDB.Enabled = False
+        BtnUpdateDB.Enabled = False
 
     End Sub
 
@@ -870,33 +781,29 @@ Public Class Form1
             If result = DialogResult.Yes Then SaveConfig()
         End If
 
-        DelTempfiles()
-
     End Sub
 
     Private Async Sub BtnLoadTXT_Click(sender As Object, e As EventArgs) Handles BtnLoadTXT.Click
 
-        Dim Counts As Tuple(Of Integer, Integer, Integer) = Await PreprocessTextFiles()
-        If Counts.Item1 = 0 And Counts.Item2 = 0 And Counts.Item3 = 0 Then
-            DelTempfiles()
-            ChangeEnables("t")
-            BtnUpdateDB.Enabled = False
-            BtnMakeDB.Enabled = False
-
-            MessageBox.Show("파일이 비어 있거나 유효하지 않습니다." & vbCrLf & "올바른 대화 파일을 선택해주세요.", "알림", MessageBoxButtons.OK, MessageBoxIcon.Warning)
-            ListBox1.Items.Clear()
-            ListBox1.Items.Add("대화 파일 불러오기 실패")
-
-        ElseIf Counts.Item1 <> -1 Then
-            ChangeEnables("t")
-            ListBox1.Items.Clear()
-            ListBox1.Items.Add("대화 파일 불러오기 성공")
-            ListBox1.Items.Add("")
-            ListBox1.Items.Add($"파일 : {Counts.Item1}개")
-            ListBox1.Items.Add($"유튜브 : {Counts.Item2}개")
-            ListBox1.Items.Add($"애플뮤직 : {Counts.Item3}개")
-            ListBox1.Items.Add("")
-            ListBox1.Items.Add("(중복 제외)")
+        Dim isLoaded As Boolean = Await PreprocessTextFiles()
+        ChangeEnables("t")
+        If isLoaded = True Then
+            If ytList.Count = 0 And appleList.Count = 0 And fileList.Count = 0 Then
+                BtnUpdateDB.Enabled = False
+                BtnMakeDB.Enabled = False
+                MessageBox.Show("선택한 파일이 비어 있거나 유효하지 않습니다." & vbCrLf & "올바른 대화 파일을 선택해주세요.", "알림", MessageBoxButtons.OK, MessageBoxIcon.Warning)
+                ListBox1.Items.Clear()
+                ListBox1.Items.Add("대화 파일 불러오기 실패")
+            Else
+                ListBox1.Items.Clear()
+                ListBox1.Items.Add("대화 파일 불러오기 성공")
+                ListBox1.Items.Add("")
+                ListBox1.Items.Add($"파일 : {fileList.Count}개")
+                ListBox1.Items.Add($"유튜브 : {ytList.Count}개")
+                ListBox1.Items.Add($"애플뮤직 : {appleList.Count}개")
+                ListBox1.Items.Add("")
+                ListBox1.Items.Add("(중복 제외)")
+            End If
         End If
 
     End Sub
@@ -907,10 +814,8 @@ Public Class Form1
             MessageBox.Show("유튜브 API 키를 입력해주세요.", "알림", MessageBoxButtons.OK, MessageBoxIcon.Warning)
         Else
             If BtnMakeDB.Text = "DB 생성하기" Then
-                Dim ytnumber As String = Regex.Match(ListBox1.Items(3).ToString(), "\d+").Value
-                Dim message As String = "최대 " & ytnumber & "개의 유튜브 API 토큰이 사용될 수 있습니다." & vbCrLf & "계속하시겠습니까?"
+                Dim message As String = "최대 " & Regex.Match(ListBox1.Items(3).ToString(), "\d+").Value & "개의 유튜브 API 토큰이 사용될 수 있습니다." & vbCrLf & "계속하시겠습니까?"
                 Dim result As DialogResult = MessageBox.Show(message, "확인", MessageBoxButtons.YesNo, MessageBoxIcon.Question)
-
                 If result = DialogResult.Yes Then
                     ChangeEnables("f")
                     BtnMakeDB.Enabled = True
@@ -921,28 +826,26 @@ Public Class Form1
 
                         Dim ytResult As Tuple(Of List(Of List(Of String)), Integer) = Await Task.Run(Function() ProcessYT(cts.Token), cts.Token)
                         Dim appleResult As Tuple(Of List(Of List(Of String)), Integer) = Await Task.Run(Function() ProcessApple(cts.Token), cts.Token)
+                        Dim dbFileName As String = Await Task.Run(Function() WriteDB(cts.Token, "CREATE", ytResult.Item1, appleResult.Item1))
 
                         If Not cts.IsCancellationRequested Then
-                            BtnMakeDB.Enabled = False
-
-                            Dim dbFileName As String = Await Task.Run(Function() WriteDB("CREATE", ytResult.Item1, appleResult.Item1))
-                            If ChkBaroUpload.Checked = True Then Await Task.Run(Sub() UploadDB(Application.StartupPath & "\DB\" & dbFileName))
-
+                            Dim uploadSuccess As Boolean = False
+                            If ChkBaroUpload.Checked = True Then uploadSuccess = Await Task.Run(Function() UploadDB(Application.StartupPath & "\DB\" & dbFileName))
                             ListBox1.Items.Clear()
-                            If ChkBaroUpload.Checked = True Then ListBox1.Items.Add("DB 생성 및 업로드를 완료하였습니다.") Else ListBox1.Items.Add("DB 생성을 완료하였습니다.")
+                            If ChkBaroUpload.Checked = True AndAlso uploadSuccess = True Then ListBox1.Items.Add("DB 생성 및 업로드를 완료하였습니다.") Else ListBox1.Items.Add("DB 생성을 완료하였습니다.")
                             ListBox1.Items.Add("")
                             ListBox1.Items.Add($"삭제 / 비공개 영상 : {ytResult.Item2}개")
                             ListBox1.Items.Add($"삭제 / 지역제한 애플뮤직 : {appleResult.Item2}개")
                             ListBox1.Items.Add("")
-                            If ChkBaroUpload.Checked = True Then ListBox1.Items.Add($"업로드 된 DB 파일 : {dbFileName}") Else ListBox1.Items.Add($"생성된 파일명 : {dbFileName}")
-
-                            ChangeEnables("t")
-                            BtnUpdateDB.Enabled = False
-                            BtnMakeDB.Enabled = False
-                            DelTempfiles()
+                            If ChkBaroUpload.Checked = True AndAlso uploadSuccess = True Then ListBox1.Items.Add($"업로드 된 DB 파일 : {dbFileName}") Else ListBox1.Items.Add($"생성된 파일명 : {dbFileName}")
                         End If
-                    Catch ex As OperationCanceledException
 
+                        ClearLists("ALL")
+                        ChangeEnables("t")
+                        BtnUpdateDB.Enabled = False
+                        BtnMakeDB.Enabled = False
+
+                    Catch ex As OperationCanceledException
                     End Try
                     BtnMakeDB.Text = "DB 생성하기"
                 End If
@@ -966,11 +869,11 @@ Public Class Form1
             MessageBox.Show("유튜브 API 키를 입력해주세요.", "알림", MessageBoxButtons.OK, MessageBoxIcon.Warning)
         Else
             If BtnUpdateDB.Text = "DB 업데이트" Then
-                Dim dbInfo As Tuple(Of String, Integer, Integer, Integer) = PreprocessUpdate()
-                If dbInfo.Item2 = -1 Then Exit Sub
-                Dim message As String = "최대 " & dbInfo.Item3 & "개의 유튜브 API 토큰이 사용될 수 있습니다." & vbCrLf & "계속하시겠습니까?"
-                Dim result As DialogResult = MessageBox.Show(message, "확인", MessageBoxButtons.YesNo, MessageBoxIcon.Question)
+                Dim UpdateInfo As Tuple(Of String, Boolean) = Await PreprocessUpdate()
+                If UpdateInfo.Item2 = False Then Exit Sub
 
+                Dim message As String = "최대 " & ytUpdateList.Count & "개의 유튜브 API 토큰이 사용될 수 있습니다." & vbCrLf & "계속하시겠습니까?"
+                Dim result As DialogResult = MessageBox.Show(message, "확인", MessageBoxButtons.YesNo, MessageBoxIcon.Question)
                 If result = DialogResult.Yes Then
                     ChangeEnables("f")
                     BtnUpdateDB.Enabled = True
@@ -978,40 +881,36 @@ Public Class Form1
                     cts = New CancellationTokenSource()
                     Try
                         BtnUpdateDB.Text = "중단하기"
-
-                        Dim baseDir As String = Application.StartupPath & "\DB\temp\"
-                        For Each fname In {"apple", "files", "yt"}
-                            If File.Exists(baseDir & fname & ".txt") Then
-                                File.Delete(baseDir & fname & ".txt")
-                                File.Move(baseDir & fname & "_update.txt", baseDir & fname & ".txt")
-                            End If
-                        Next
+                        ytList.Clear()
+                        appleList.Clear()
+                        fileList.Clear()
+                        ytList.AddRange(ytUpdateList)
+                        appleList.AddRange(appleUpdateList)
+                        fileList.AddRange(fileUpdateList)
 
                         Dim ytResult As Tuple(Of List(Of List(Of String)), Integer) = Await Task.Run(Function() ProcessYT(cts.Token), cts.Token)
                         Dim appleResult As Tuple(Of List(Of List(Of String)), Integer) = Await Task.Run(Function() ProcessApple(cts.Token), cts.Token)
+                        Dim dbFileName As String = Await Task.Run(Function() WriteDB(cts.Token, "UPDATE", ytResult.Item1, appleResult.Item1, UpdateInfo.Item1))
 
                         If Not cts.IsCancellationRequested Then
-                            BtnUpdateDB.Enabled = False
-
-                            Dim dbFileName As String = Await Task.Run(Function() WriteDB("UPDATE", ytResult.Item1, appleResult.Item1, dbInfo.Item1))
-                            If ChkBaroUpload.Checked = True Then Await Task.Run(Sub() UploadDB(Application.StartupPath & "\DB\" & dbFileName))
-
+                            Dim uploadSuccess As Boolean = False
+                            If ChkBaroUpload.Checked = True Then uploadSuccess = Await Task.Run(Function() UploadDB(Application.StartupPath & "\DB\" & dbFileName))
                             ListBox1.Items.Clear()
-                            If ChkBaroUpload.Checked = True Then ListBox1.Items.Add("DB 업데이트 및 업로드를 완료하였습니다.") Else ListBox1.Items.Add("DB 업데이트를 완료하였습니다.")
+                            If ChkBaroUpload.Checked = True AndAlso uploadSuccess = True Then ListBox1.Items.Add("DB 업데이트 및 업로드를 완료하였습니다.") Else ListBox1.Items.Add("DB 업데이트를 완료하였습니다.")
                             ListBox1.Items.Add("")
-                            ListBox1.Items.Add($"업데이트 한 파일 : {dbInfo.Item2}개")
-                            ListBox1.Items.Add($"업데이트 한 유튜브 : {dbInfo.Item3 - ytResult.Item2}개")
-                            ListBox1.Items.Add($"업데이트 한 애플뮤직 : {dbInfo.Item4 - appleResult.Item2}개")
+                            ListBox1.Items.Add($"업데이트 한 파일 : {fileList.Count}개")
+                            ListBox1.Items.Add($"업데이트 한 유튜브 : {ytList.Count - ytResult.Item2}개")
+                            ListBox1.Items.Add($"업데이트 한 애플뮤직 : {appleList.Count - appleResult.Item2}개")
                             ListBox1.Items.Add("")
-                            If ChkBaroUpload.Checked = True Then ListBox1.Items.Add($"업로드 된 DB 파일 : {dbFileName}") Else ListBox1.Items.Add($"생성된 파일명 : {dbFileName}")
-
-                            ChangeEnables("t")
-                            BtnUpdateDB.Enabled = False
-                            BtnMakeDB.Enabled = False
-                            DelTempfiles()
+                            If ChkBaroUpload.Checked = True AndAlso uploadSuccess = True Then ListBox1.Items.Add($"업로드 된 DB 파일 : {dbFileName}") Else ListBox1.Items.Add($"생성된 파일명 : {dbFileName}")
                         End If
-                    Catch ex As OperationCanceledException
 
+                        ClearLists("ALL")
+                        ChangeEnables("t")
+                        BtnUpdateDB.Enabled = False
+                        BtnMakeDB.Enabled = False
+
+                    Catch ex As OperationCanceledException
                     End Try
                     BtnUpdateDB.Text = "DB 업데이트"
                 End If
