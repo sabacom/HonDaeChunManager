@@ -306,11 +306,9 @@ Public Class Form1
                               ListBox1.Items(1) = $"({processedCount}/{ytList.Count})"
                           End Sub)
 
-                If ytEntry(0).ToLower() = "유튜브" Or ytEntry(0).ToLower() = "쇼츠" Then
-                    Dim videoInfo As Tuple(Of String, String) = GetVideoInfo(ytEntry(1))
-                    If videoInfo IsNot Nothing AndAlso Not String.IsNullOrWhiteSpace(videoInfo.Item1) AndAlso Not String.IsNullOrWhiteSpace(videoInfo.Item2) Then
-                        resultList.Add(New List(Of String)({ytEntry(0), ytEntry(2), ytEntry(3), videoInfo.Item1, videoInfo.Item2, ytEntry(1)}))
-                    End If
+                Dim videoInfo As Tuple(Of String, String) = GetVideoInfo(ytEntry(1))
+                If videoInfo IsNot Nothing AndAlso Not String.IsNullOrWhiteSpace(videoInfo.Item1) AndAlso Not String.IsNullOrWhiteSpace(videoInfo.Item2) Then
+                    resultList.Add(New List(Of String)({ytEntry(0), ytEntry(2), ytEntry(3), videoInfo.Item1, videoInfo.Item2, ytEntry(1)}))
                 End If
             Next
 
@@ -332,6 +330,8 @@ Public Class Form1
         Dim processedcount As Integer = 0
         Dim resultList As New List(Of List(Of String))()
         Dim httpClient As New HttpClient()
+        Dim pattern1 As New Regex("^(.+) - ([^의]+)의")
+        Dim pattern2 As New Regex("^(.*?)(?: - 아티스트: (.*?))?(?: - 라디오 스테이션| - 플레이리스트| - Apple Music)")
 
         Me.Invoke(Sub()
                       ListBox1.Items.Clear()
@@ -354,9 +354,14 @@ Public Class Form1
                     Dim titleNode As HtmlNode = doc.DocumentNode.SelectSingleNode("//title")
 
                     If titleNode IsNot Nothing Then
-                        Dim title As String = titleNode.InnerText.Trim()
-                        resultList.Add(New List(Of String)({appleEntry(0), appleEntry(2), appleEntry(3), title, appleEntry(1)}))
+                        Dim match As Match
+                        match = If(titleNode.InnerText.Trim().Contains("의 앨범 - Apple Music") OrElse titleNode.InnerText.Trim().Contains("의 뮤직비디오 - Apple Music"), pattern1.Match(titleNode.InnerText.Trim()), pattern2.Match(titleNode.InnerText.Trim()))
+                        If match.Success Then
+                            Dim artist As String = If(match.Groups(2).Success, match.Groups(2).Value.Trim(), "")
+                            resultList.Add(New List(Of String)({appleEntry(2), appleEntry(3), match.Groups(1).Value.Trim(), artist.Replace("&amp;", "&"), appleEntry(1)}))
+                        End If
                     End If
+
                 Catch ex As Exception
                 End Try
 
@@ -437,19 +442,12 @@ Public Class Form1
                     If appleResultList.Count > 0 Then
                         For Each appleItem In appleResultList
                             ct.ThrowIfCancellationRequested()
-                            Dim Title As String = appleItem(3)
-                            Title = Regex.Replace(Title, "\u200E", String.Empty)
-                            Title = Title.Replace("Apple Music에서 감상하는 ", String.Empty)
-                            Title = Title.Replace("Apple Music에서 만나는 ", String.Empty)
-                            Title = Title.Replace("Apple Music에서 만나는 ", String.Empty)
-                            Title = Title.Replace("Apple Music의 ", String.Empty)
-                            Title = Title.Replace("&amp;", "&")
                             cmd.CommandText = "INSERT INTO music_data (유형, 제목, 채널명, 최초전송일, 전송자, 유튜브id, 애플뮤직URL) VALUES (?, ?, ?, ?, ?, ?, ?)"
                             cmd.Parameters.AddWithValue("유형", "애플뮤직")
-                            cmd.Parameters.AddWithValue("제목", Title)
-                            cmd.Parameters.AddWithValue("채널명", Nothing)
-                            cmd.Parameters.AddWithValue("최초전송일", appleItem(1))
-                            cmd.Parameters.AddWithValue("전송자", appleItem(2))
+                            cmd.Parameters.AddWithValue("제목", appleItem(2))
+                            cmd.Parameters.AddWithValue("채널명", appleItem(3))
+                            cmd.Parameters.AddWithValue("최초전송일", appleItem(0))
+                            cmd.Parameters.AddWithValue("전송자", appleItem(1))
                             cmd.Parameters.AddWithValue("유튜브id", Nothing)
                             cmd.Parameters.AddWithValue("애플뮤직URL", appleItem(4))
                             cmd.ExecuteNonQuery()
@@ -578,7 +576,10 @@ Public Class Form1
                               BtnUpdateDB.Enabled = False
                           End Sub)
 
-                If ChkShutdown.Checked = True Then System.Diagnostics.Process.Start("shutdown", "/s /t 0") ' 설정 저장창 떠도 강제종료되나 테스트 해보기
+                If ChkShutdown.Checked = True Then
+                    HasConfigChanged = False
+                    System.Diagnostics.Process.Start("shutdown", "/s /t 0")
+                End If
 
             End Using
             Return True

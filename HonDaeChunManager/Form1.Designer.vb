@@ -99,7 +99,7 @@ Partial Class Form1
         ' 
         ListBox1.FormattingEnabled = True
         ListBox1.ItemHeight = 15
-        ListBox1.Items.AddRange(New Object() {"HonDaeChun WEB 관리자", "버전 0.1.5 / 2023-08-26"})
+        ListBox1.Items.AddRange(New Object() {"HonDaeChun WEB 관리자", "버전 0.1.6 / 2023-09-25"})
         ListBox1.Location = New Point(12, 12)
         ListBox1.Name = "ListBox1"
         ListBox1.SelectionMode = SelectionMode.None
